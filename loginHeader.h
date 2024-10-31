@@ -1,0 +1,1 @@
+extern const char *loginPage(int, const char *);

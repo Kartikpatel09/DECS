@@ -1,3 +1,10 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+#include <fcntl.h>
+#include <arpa/inet.h>
+#include <errno.h>
 #define BUFFER_SIZE 1024
 #define FILENAME_MAX_LENGTH 256 // Increased filename buffer length
 #define MSG_SIZE 15
@@ -138,7 +145,6 @@ int receiveFileData(const char *fileName, const char *serverIP, int serverPort)
     return 1; // Success
 }
 
-
 // Function to send data to the server
 int sendFileData(const char *fileName, const char *serverIP, int serverPort)
 {
@@ -278,12 +284,11 @@ int executeCommand(const char *command)
 }
 int checkFilePresence(char *filename, const char *serverIP, int serverPort)
 {
-   
+
     char responseMsg[MSG_SIZE];
     int socketFD, ret;
     struct sockaddr_in serverAddress;
     char buffer[BUFFER_SIZE] = {0};
-  
 
     // Creating a socket
     if ((socketFD = socket(AF_INET, SOCK_STREAM, 0)) < 0)
@@ -315,7 +320,7 @@ int checkFilePresence(char *filename, const char *serverIP, int serverPort)
         perror("Sending Error \n");
         return 0;
     }
-    ret = recv(socketFD, responseMsg, MSG_SIZE,0);
+    ret = recv(socketFD, responseMsg, MSG_SIZE, 0);
     if (ret < 0)
     {
         perror("Error in reciving\n");
@@ -330,18 +335,20 @@ int checkFilePresence(char *filename, const char *serverIP, int serverPort)
             perror("Sending Error \n");
             return 0;
         }
-        ret = recv(socketFD, responseMsg, MSG_SIZE,0);
+        ret = recv(socketFD, responseMsg, MSG_SIZE, 0);
         if (ret < 0)
         {
             perror("Error in reciving\n");
             return 0;
         }
         responseMsg[ret] = '\0';
-        if(strcmp(responseMsg,"No file")==0){
-            return 0;//file not present
+        if (strcmp(responseMsg, "No file") == 0)
+        {
+            return 0; // file not present
         }
-        else{
-            return 1;//file present
+        else
+        {
+            return 1; // file present
         }
     }
     else
