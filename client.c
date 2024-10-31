@@ -1,11 +1,5 @@
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
-#include <fcntl.h>
-#include <arpa/inet.h>
-#include <errno.h>
 #include "clientHeader.h"
+#include "loginHeader.h"
 
 int main(int argc, char *argv[])
 {
@@ -18,6 +12,7 @@ int main(int argc, char *argv[])
     int inputChoice;
     const char *serverIP = argv[1];
     int serverPort = atoi(argv[2]);
+    loginPage(serverPort, serverIP);
 
     // Clear the temporary file or create it if it doesn't exist
     int fd = open("temp", O_TRUNC | O_CREAT | O_RDWR, 0644);
@@ -40,13 +35,14 @@ int main(int argc, char *argv[])
         char fileName[FILENAME_MAX_LENGTH];
         printf("++++++++++++++++++++++++++++++Enter file Name+++++++++++++++++++++++++++++++++\n");
 
-            switch (inputChoice)
+        switch (inputChoice)
         {
         case 1:
-            
+
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
-            if(checkFilePresence(fileName,serverIP,serverPort)==1){
+            if (checkFilePresence(fileName, serverIP, serverPort) == 1)
+            {
                 printf("File Already Present enter other name\n");
                 break;
             }
@@ -65,10 +61,11 @@ int main(int argc, char *argv[])
             break;
 
         case 2:
-            
+
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
-            if(checkFilePresence(fileName,serverIP,serverPort)==0){
+            if (checkFilePresence(fileName, serverIP, serverPort) == 0)
+            {
                 printf("File is not present\n");
                 break;
             }
