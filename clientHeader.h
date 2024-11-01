@@ -385,3 +385,100 @@ int checkFilePresence(char *filename, const char *serverIP, int serverPort)
         perror("Something wrong in connection\n");
     }
 }
+
+int changePermission(const char *fileName, const char *serverIP, int serverPort, struct user *user)
+{
+    char responseMsg[MSG_SIZE];
+    int socketFD, ret;
+    struct sockaddr_in serverAddress;
+    char buffer[BUFFER_SIZE] = {0};
+
+    // Creating a socket
+    if ((socketFD = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("Socket creation error");
+        return -1; // Failure
+    }
+
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(serverPort);
+
+    if (inet_pton(AF_INET, serverIP, &serverAddress.sin_addr) <= 0)
+    {
+        perror("Invalid address/ Address not supported");
+        close(socketFD);
+        return -1; // Failure
+    }
+
+    // Connecting to the server
+    if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        perror("Connection Failed");
+        close(socketFD);
+        return -1; // Failure
+    }
+    ret = send(socketFD, "ChangePerm", strlen("ChangePerm"), 0);
+    if (ret < 0)
+    {
+        perror("Sending Error \n");
+        return 0;
+    }
+    ret = recv(socketFD, responseMsg, MSG_SIZE, 0);
+    if (ret < 0)
+    {
+        perror("Error in reciving\n");
+        return 0;
+    }
+    responseMsg[ret] = '\0';
+    if (strcmp(responseMsg, "ChangePerm") == 0)
+    {
+        char updatedName[381];
+        strcpy(updatedName, fileName);
+        strcat(updatedName, "/");
+        strcat(updatedName, user->username);
+        printf("%s\n", updatedName);
+        ret = send(socketFD, updatedName, sizeof(updatedName), 0);
+        if (ret < 0)
+        {
+            perror("Sending Error \n");
+            return 0;
+        }
+        ret = recv(socketFD, responseMsg, MSG_SIZE, 0);
+
+        if (ret < 0)
+        {
+            perror("Error in reciving\n");
+            return 0;
+        }
+        responseMsg[ret] = '\0';
+        printf("%s\n", responseMsg);
+        if (strcmp(responseMsg, "0") == 0)
+        {
+            printf("Successfully updated!\n");
+            return 0; // file not present
+        }
+        if (strcmp(responseMsg, "1") == 0)
+        {
+            printf("You are not the creator of the file, so not able to change the permission\n");
+            return 0; // file not present
+        }
+        if (strcmp(responseMsg, "2") == 0)
+        {
+            printf("no such file!\n");
+            return 0; // file not present
+        }
+        if (strcmp(responseMsg, "3") == 0)
+        {
+            printf("wrong input!\n");
+            return 0; // file not present
+        }
+        else
+        {
+            printf("something went wrong!\n");
+        }
+    }
+    else
+    {
+        perror("Something wrong in connection\n");
+    }
+}

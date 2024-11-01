@@ -29,7 +29,8 @@ int main(int argc, char *argv[])
         printf("Enter the task that you want to perform:\n");
         printf("Enter 1 for creating and storing a file on the server\n");
         printf("Enter 2 for reading and writing an existing file on the server\n");
-        printf("Enter 3 for exiting\n");
+        printf("Enter 4 for changing file permission\n");
+        printf("Enter 5 for exiting\n");
         printf("Enter your choice: ");
         scanf("%d", &inputChoice);
         char fileName[FILENAME_MAX_LENGTH];
@@ -94,7 +95,39 @@ int main(int argc, char *argv[])
             remove("temp");
             break;
 
-        case 3:
+        case 4:
+            printf("Enter the name of the file: ");
+            scanf("%s", fileName);
+            printf("\n");
+            char perm[10];
+            printf("Enter which permission needs to be chaged, read or write? :");
+            scanf("%s", perm);
+            printf("\n");
+            char todo[10];
+            printf("Enter whether invoke or revoke access : ");
+            scanf("%s", todo);
+            printf("\n");
+            char userName[50];
+            printf("Enter the username of the affected user :");
+            scanf("%s", userName);
+            printf("\n");
+
+            char updatedName[330];
+            strcpy(updatedName, fileName);
+            strcat(updatedName, "/");
+            strcat(updatedName, perm);
+            strcat(updatedName, "/");
+            strcat(updatedName, todo);
+            strcat(updatedName, "/");
+            strcat(updatedName, userName);
+            printf("%s\n", updatedName);
+            if ((changePermission(updatedName, serverIP, serverPort, user) == -1))
+            {
+                return -1;
+            }
+            break;
+
+        case 5:
             return 0;
 
         default:

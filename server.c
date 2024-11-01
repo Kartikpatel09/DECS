@@ -151,7 +151,24 @@ void *handleClientRequests()
             }
             checkLogin(&user, connection_fd);
         }
-
+        else if (strcmp(command, "ChangePerm") == 0)
+        {
+            result = send(connection_fd, "ChangePerm", strlen("ChangePerm"), 0);
+            if (result < 0)
+            {
+                perror("Error in sending ");
+                break;
+            }
+            char fileUser[382];
+            result = recv(connection_fd, fileUser, 381, 0);
+            if (result < 0)
+            {
+                perror("Error in sending ");
+                break;
+            }
+            fileUser[382] = '\0';
+            checkFileUser(fileUser, connection_fd);
+        }
         close(connection_fd);
         printf("Client handled by thread: %ld\n", (long)pthread_self());
         printf("-----------------------------------------------------------\n");
@@ -185,6 +202,12 @@ int main(int argc, char *argv[])
     if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
         printf("Socket creation error\n");
+        return -1;
+    }
+    int opt = 1;
+    if (setsockopt(server_socket, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) < 0)
+    {
+        printf("Socket option change error\n");
         return -1;
     }
 

@@ -23,6 +23,8 @@ struct accessData
     char creator[50];
     char readUsers[20][50];
     char writeUsers[20][50];
+    char numReaders[3];
+    char numWriters[3];
 };
 
 int populateAccess(char *filename, char *user, char *command)
@@ -41,10 +43,14 @@ int populateAccess(char *filename, char *user, char *command)
         strcpy(acc->creator, user);
         strcpy(acc->readUsers[0], user);
         strcpy(acc->writeUsers[0], user);
+        sprintf(acc->numWriters, "%d", 1);
+        sprintf(acc->numReaders, "%d", 1);
         write(file_fd, acc->filename, sizeof(acc->filename));
         write(file_fd, acc->creator, sizeof(acc->creator));
         write(file_fd, acc->readUsers, sizeof(acc->readUsers));
         write(file_fd, acc->writeUsers, sizeof(acc->writeUsers));
+        write(file_fd, acc->numReaders, sizeof(acc->numReaders));
+        write(file_fd, acc->numWriters, sizeof(acc->numWriters));
         write(file_fd, "\n", 1);
         close(file_fd);
     }
@@ -287,6 +293,165 @@ void checkLogin(struct user *user, int connection_fd)
     if (!found)
     {
         int result = send(connection_fd, "2", strlen("2"), 0);
+        if (result < 0)
+        {
+            perror("Error in sending ");
+        }
+    }
+    printf("File request satisfied\n");
+    close(file_fd);
+}
+
+void checkFileUser(char *fileUser, int connection_fd)
+{
+    int file_fd = open("access.dat", O_RDWR);
+    if (file_fd < 0)
+    {
+        perror("Error opening file");
+        exit(0);
+    }
+
+    char buffer[2313];
+    int bytesRead, found = 0;
+    char fileUserSep[5][256];
+    // fileUserSep[0] - file name
+    // fileUserSep[1] - which permission
+    // fileUserSep[2] - invoke or revoke
+    // fileUserSep[3] - affected user
+    // fileUserSep[4] - requesting user
+    char *tok = strtok(fileUser, "/");
+    int i = 0;
+    while (tok != NULL)
+    {
+        strcpy(fileUserSep[i], tok);
+        i++;
+        tok = strtok(NULL, "/");
+    }
+
+    // response 1 - user is not creator
+    // response 3 - wrong read, write
+    while ((bytesRead = read(file_fd, buffer, 2313)) > 0)
+    {
+        if (strcmp(buffer, fileUserSep[0]) == 0)
+        {
+            if (strcmp(&buffer[256], fileUserSep[4]))
+            {
+                int result = send(connection_fd, "1", strlen("1"), 0);
+                if (result < 0)
+                {
+                    perror("Error in sending ");
+                }
+                close(file_fd);
+                return;
+            }
+            else
+            {
+                lseek(file_fd, -2313, SEEK_CUR);
+                printf("%s\n", &buffer[2305]);
+                printf("%s\n", &buffer[2306]);
+                printf("%s\n", &buffer[2307]);
+                int numReaders = atoi(&buffer[2306]);
+                int numWriters = atoi(&buffer[2309]);
+                printf("%d\n", numReaders);
+                printf("%d\n", numWriters);
+                printf("%s\n", &buffer[356]);
+                struct accessData acc;
+
+                if (!strcmp(fileUserSep[1], "read") && (!strcmp(fileUserSep[2], "invoke") || !strcmp(fileUserSep[2], "revoke")))
+                {
+                    if (!strcmp(fileUserSep[2], "invoke"))
+                    {
+                        lseek(file_fd, (306 + (numReaders * 50)), SEEK_CUR);
+                        strcpy(acc.readUsers[numReaders], fileUserSep[3]);
+                        write(file_fd, acc.readUsers[numReaders], 50);
+                        lseek(file_fd, -(306 + ((numWriters + 1) * 50)), SEEK_CUR);
+                        numReaders++;
+                        char numWriteStr[3];
+                        sprintf(numWriteStr, "%d", numReaders);
+                        lseek(file_fd, 2306, SEEK_CUR);
+                        write(file_fd, numWriteStr, 3);
+                    }
+                    else
+                    {
+                        printf("revoking read\n");
+                        for (int i = 0; i < numReaders; i++)
+                        {
+                            printf("%s\n", &buffer[306 + (i * 50)]);
+                            printf("%s\n", fileUserSep[3]);
+                            if (!strcmp(&buffer[306 + (i * 50)], fileUserSep[3]))
+                            {
+                                lseek(file_fd, (306 + (i * 50)), SEEK_CUR);
+                                memset(acc.readUsers[i], '\0', 50);
+                                write(file_fd, acc.readUsers[i], 50);
+                                lseek(file_fd, -(306 + ((i + 1) * 50)), SEEK_CUR);
+                                numReaders--;
+                                char numWriteStr[3];
+                                sprintf(numWriteStr, "%d", numReaders);
+                                lseek(file_fd, 2306, SEEK_CUR);
+                                write(file_fd, numWriteStr, 3);
+                            }
+                        }
+                    }
+                }
+                else if (!strcmp(fileUserSep[1], "write") && (!strcmp(fileUserSep[2], "invoke") || !strcmp(fileUserSep[2], "revoke")))
+                {
+                    if (!strcmp(fileUserSep[2], "invoke"))
+                    {
+                        lseek(file_fd, (1306 + (numWriters * 50)), SEEK_CUR);
+                        strcpy(acc.writeUsers[numWriters], fileUserSep[3]);
+                        write(file_fd, acc.writeUsers[numWriters], 50);
+                        lseek(file_fd, -(1306 + ((numWriters + 1) * 50)), SEEK_CUR);
+                        numWriters++;
+                        char numWriteStr[3];
+                        sprintf(numWriteStr, "%d", numWriters);
+                        lseek(file_fd, 2309, SEEK_CUR);
+                        write(file_fd, numWriteStr, 3);
+                    }
+                    else
+                    {
+                        for (int i = 0; i < numWriters; i++)
+                        {
+                            if (!strcmp(&buffer[1306 + (i * 50)], fileUserSep[3]))
+                            {
+                                lseek(file_fd, (1306 + (i * 50)), SEEK_CUR);
+                                memset(acc.writeUsers[i], '\0', 50);
+                                write(file_fd, acc.writeUsers[i], 50);
+                                lseek(file_fd, -(1306 + ((i + 1) * 50)), SEEK_CUR);
+                                numWriters--;
+                                char numWriteStr[3];
+                                sprintf(numWriteStr, "%d", numWriters);
+                                lseek(file_fd, 2309, SEEK_CUR);
+                                write(file_fd, numWriteStr, 3);
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    int result = send(connection_fd, "3", strlen("3"), 0);
+                    if (result < 0)
+                    {
+                        perror("Error in sending ");
+                    }
+                    close(file_fd);
+                    return;
+                }
+            }
+            found = 1;
+            break;
+        }
+    }
+    if (!found)
+    {
+        int result = send(connection_fd, "2", strlen("2"), 0);
+        if (result < 0)
+        {
+            perror("Error in sending ");
+        }
+    }
+    else
+    {
+        int result = send(connection_fd, "0", strlen("0"), 0);
         if (result < 0)
         {
             perror("Error in sending ");
