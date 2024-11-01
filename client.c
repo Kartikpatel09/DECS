@@ -12,7 +12,7 @@ int main(int argc, char *argv[])
     int inputChoice;
     const char *serverIP = argv[1];
     int serverPort = atoi(argv[2]);
-    loginPage(serverPort, serverIP);
+    struct user *user = loginPage(serverPort, serverIP);
 
     // Clear the temporary file or create it if it doesn't exist
     int fd = open("temp", O_TRUNC | O_CREAT | O_RDWR, 0644);
@@ -54,10 +54,11 @@ int main(int argc, char *argv[])
             }
 
             // Send the file to the server
-            if (sendFileData(fileName, serverIP, serverPort) == -1)
+            if (sendFileData(fileName, serverIP, serverPort, user) == -1)
             {
                 return -1;
             }
+            remove("temp");
             break;
 
         case 2:
@@ -70,10 +71,13 @@ int main(int argc, char *argv[])
                 break;
             }
             // Fetch the file from the server
-            if (receiveFileData(fileName, serverIP, serverPort) == -1)
+            int rec;
+            if ((rec = receiveFileData(fileName, serverIP, serverPort, user)) == -1)
             {
                 return -1;
             }
+            if (rec == 0)
+                break;
 
             // Open the fetched file in nano editor for editing
             if (!executeCommand("nano temp"))
@@ -83,10 +87,11 @@ int main(int argc, char *argv[])
             }
 
             // Send the updated file back to the server
-            if (sendFileData(fileName, serverIP, serverPort) == -1)
+            if (sendFileData(fileName, serverIP, serverPort, user) == -1)
             {
                 return -1;
             }
+            remove("temp");
             break;
 
         case 3:

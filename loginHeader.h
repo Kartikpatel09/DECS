@@ -1,1 +1,1 @@
-extern const char *loginPage(int, const char *);
+struct user *loginPage(int, const char *);

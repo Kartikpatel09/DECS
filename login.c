@@ -82,10 +82,10 @@ void takeinput(struct user *user)
     } while (1);
 }
 
-const char *
+struct user *
 loginPage(int serverPort, const char *serverIP)
 {
-    struct user user;
+    struct user *user = (struct user *)malloc(sizeof(struct user));
     int opt;
 
     printf("\n\t\t--------Login/Signup---------\n");
@@ -136,7 +136,7 @@ loginPage(int serverPort, const char *serverIP)
         }
 
         // take the inputs
-        takeinput(&user);
+        takeinput(user);
         switch (opt)
         {
         case 1:
@@ -156,7 +156,7 @@ loginPage(int serverPort, const char *serverIP)
             responseMsg[ret] = '\0';
             if (strcmp(responseMsg, "SignUp") == 0)
             {
-                ret = send(socketFD, &user, sizeof(user), 0);
+                ret = send(socketFD, user, sizeof(struct user), 0);
                 if (ret < 0)
                 {
                     perror("Sending Error \n");
@@ -203,7 +203,7 @@ loginPage(int serverPort, const char *serverIP)
             responseMsg[ret] = '\0';
             if (strcmp(responseMsg, "Login") == 0)
             {
-                ret = send(socketFD, &user, sizeof(user), 0);
+                ret = send(socketFD, user, sizeof(struct user), 0);
                 if (ret < 0)
                 {
                     perror("Sending Error \n");
@@ -235,5 +235,5 @@ loginPage(int serverPort, const char *serverIP)
             break;
         }
     } while (done == 0);
-    exit(0);
+    return user;
 }

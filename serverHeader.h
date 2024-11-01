@@ -16,6 +16,65 @@ struct user
     char username[50];
     char password[50];
 };
+
+struct accessData
+{
+    char filename[256];
+    char creator[50];
+    char readUsers[20][50];
+    char writeUsers[20][50];
+};
+
+int populateAccess(char *filename, char *user, char *command)
+{
+    printf("access %d\n", access(filename, F_OK));
+    if (access(filename, F_OK) != 0)
+    {
+        int file_fd = open("access.dat", O_CREAT | O_APPEND | O_RDWR, 0644);
+        if (file_fd < 0)
+        {
+            perror("Error opening file");
+            exit(0);
+        }
+        struct accessData *acc = (struct accessData *)malloc(sizeof(struct accessData));
+        strcpy(acc->filename, filename);
+        strcpy(acc->creator, user);
+        strcpy(acc->readUsers[0], user);
+        strcpy(acc->writeUsers[0], user);
+        write(file_fd, acc->filename, sizeof(acc->filename));
+        write(file_fd, acc->creator, sizeof(acc->creator));
+        write(file_fd, acc->readUsers, sizeof(acc->readUsers));
+        write(file_fd, acc->writeUsers, sizeof(acc->writeUsers));
+        write(file_fd, "\n", 1);
+        close(file_fd);
+    }
+    else if (!strcmp("Fetch", command))
+    {
+        int file_fd = open("access.dat", O_RDONLY);
+        if (file_fd < 0)
+        {
+            perror("Error opening file");
+            exit(0);
+        }
+        char buffer[2307];
+        int readAccess = -1;
+        while (read(file_fd, buffer, 2307) > 0)
+        {
+            if (!strcmp(buffer, filename))
+            {
+                for (int i = 0; i < 20; i++)
+                {
+                    if (!strcmp(&buffer[306 + (i * 50)], user))
+                    {
+                        readAccess = 0;
+                        break;
+                    }
+                }
+            }
+        }
+        return readAccess;
+    }
+}
 // Function to send file data to the client
 int sendFileData(const char *filename, int connection_fd)
 {
@@ -99,6 +158,8 @@ int executeCommand(int connection_fd, char *command)
             return -1;
         }
         filename[result] = '\0';
+        char *user = strtok(filename, "/");
+        char *filename = strtok(NULL, "/");
         if (access(filename, F_OK) != 0)
         {
             send(connection_fd, "No file", strlen("No file"), 0);
@@ -106,15 +167,28 @@ int executeCommand(int connection_fd, char *command)
         }
         else
         {
-            send(connection_fd, "Ok", strlen("Ok"), 0);
-            result = recv(connection_fd, command, sizeof(command), 0);
-            command[result] = '\0';
-            if (result < 0 || strcmp(command, "Send") != 0)
+            int readAccess = populateAccess(filename, user, command);
+            if (readAccess == -1)
             {
-                printf("Unexpected command received: %s\n", command);
-                return -1;
+                int result = send(connection_fd, "No Read access", strlen("No Read access"), 0);
+                if (result <= 0)
+                {
+                    printf("Error sending read access\n");
+                    return -1;
+                }
             }
-            sendFileData(filename, connection_fd);
+            else
+            {
+                send(connection_fd, "Ok", strlen("Ok"), 0);
+                result = recv(connection_fd, command, sizeof(command), 0);
+                command[result] = '\0';
+                if (result < 0 || strcmp(command, "Send") != 0)
+                {
+                    printf("Unexpected command received: %s\n", command);
+                    return -1;
+                }
+                sendFileData(filename, connection_fd);
+            }
         }
     }
     else if (strcmp("Create/Store", command) == 0)
@@ -126,8 +200,11 @@ int executeCommand(int connection_fd, char *command)
             return -1;
         }
         filename[result] = '\0';
-
         send(connection_fd, "Ok", strlen("Ok"), 0);
+
+        char *user = strtok(filename, "/");
+        char *filename = strtok(NULL, "/");
+        populateAccess(filename, user, command);
         receiveFileData(filename, connection_fd);
     }
     else
@@ -176,6 +253,8 @@ void populateLogin(struct user *user, int connection_fd)
             perror("Error in sending ");
         }
     }
+    printf("user :%s\n", user->username);
+    printf("pwd :%s\n", user->password);
     printf("File request satisfied\n");
     close(file_fd);
 }

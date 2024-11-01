@@ -9,8 +9,14 @@
 #define FILENAME_MAX_LENGTH 256 // Increased filename buffer length
 #define MSG_SIZE 15
 
+struct user
+{
+    char username[50];
+    char password[50];
+};
+
 // Function to receive data from the server
-int receiveFileData(const char *fileName, const char *serverIP, int serverPort)
+int receiveFileData(const char *fileName, const char *serverIP, int serverPort, struct user *user)
 {
     int fileDescriptor = open("temp", O_CREAT | O_RDWR | O_TRUNC, 0644);
     if (fileDescriptor < 0)
@@ -72,8 +78,13 @@ int receiveFileData(const char *fileName, const char *serverIP, int serverPort)
         return -1;
     }
 
+    char updatedName[150];
+    strcpy(updatedName, user->username);
+    strcat(updatedName, "/");
+    strcat(updatedName, fileName);
+
     // Sending the file name to the server
-    ret = send(socketFD, fileName, strlen(fileName), 0);
+    ret = send(socketFD, updatedName, strlen(updatedName), 0);
     if (ret == -1)
     {
         perror("Failed to send file name");
@@ -93,9 +104,20 @@ int receiveFileData(const char *fileName, const char *serverIP, int serverPort)
     }
     responseMsg[ret] = '\0';
 
+    printf("1\n");
+
     if (strcmp("No file", responseMsg) == 0)
     {
         printf("File is not present on the server\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return 0;
+    }
+    printf("2\n");
+
+    if (strcmp("No Read access", responseMsg) == 0)
+    {
+        printf("Permission denied\n");
         close(fileDescriptor);
         close(socketFD);
         return 0;
@@ -120,8 +142,10 @@ int receiveFileData(const char *fileName, const char *serverIP, int serverPort)
     }
 
     // Receiving file data from the server
+    printf("receiving the file data!");
     while ((ret = recv(socketFD, buffer, BUFFER_SIZE, 0)) > 0)
     {
+        printf("buffer :%s\n", buffer);
         if (write(fileDescriptor, buffer, ret) <= 0)
         {
             perror("Error writing to the file");
@@ -146,7 +170,7 @@ int receiveFileData(const char *fileName, const char *serverIP, int serverPort)
 }
 
 // Function to send data to the server
-int sendFileData(const char *fileName, const char *serverIP, int serverPort)
+int sendFileData(const char *fileName, const char *serverIP, int serverPort, struct user *user)
 {
     int fileDescriptor = open("temp", O_RDONLY);
     if (fileDescriptor < 0)
@@ -209,7 +233,11 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort)
     }
 
     // Sending the file name to the server
-    ret = send(socketFD, fileName, strlen(fileName), 0);
+    char updatedName[150];
+    strcpy(updatedName, user->username);
+    strcat(updatedName, "/");
+    strcat(updatedName, fileName);
+    ret = send(socketFD, updatedName, strlen(updatedName), 0);
     if (ret == -1)
     {
         perror("Failed to send file name");
