@@ -1,0 +1,547 @@
+#include "headers.h"
+#define BUFFER_SIZE 1024
+#define FILENAME_MAX_LENGTH 256 // Increased filename buffer length
+#define MSG_SIZE 15
+
+struct user
+{
+    char username[50];
+    char password[50];
+};
+
+// Function to receive data from the server
+int receiveFileData(const char *fileName, const char *serverIP, int serverPort, struct user *user,char *temporary_file)
+{
+    int fileDescriptor = open(temporary_file, O_CREAT | O_RDWR | O_TRUNC, 0644);
+    if (fileDescriptor < 0)
+    {
+        perror("Error opening file for writing");
+        return -1; 
+    }
+
+    int socketFD, ret;
+    struct sockaddr_in serverAddress;
+    char buffer[BUFFER_SIZE] = {0};
+    char responseMsg[MSG_SIZE];
+
+    // Creating a socket
+    if ((socketFD = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("Socket creation error");
+        close(fileDescriptor);
+        return -1; 
+    }
+
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(serverPort);
+
+    if (inet_pton(AF_INET, serverIP, &serverAddress.sin_addr) <= 0)
+    {
+        perror("Invalid address/ Address not supported");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    // Connecting to the server
+    if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        perror("Connection Failed");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    // Sending action request ("Fetch")
+    ret = send(socketFD, "Fetch", strlen("Fetch"), 0);
+    if (ret == -1)
+    {
+        perror("Failed to send Fetch request");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    ret = recv(socketFD, responseMsg, sizeof(responseMsg) - 1, 0);
+    responseMsg[ret] = '\0';
+    if (ret < 0 || strcmp(responseMsg, "Ok") != 0)
+    {
+        printf("Unexpected response: %s\n", responseMsg);
+        close(fileDescriptor);
+        close(socketFD);
+        return -1;
+    }
+
+    char updatedName[150];
+    strcpy(updatedName, user->username);
+    strcat(updatedName, "/");
+    strcat(updatedName, fileName);
+
+    // Sending the file name to the server
+    ret = send(socketFD, updatedName, strlen(updatedName), 0);
+    if (ret == -1)
+    {
+        perror("Failed to send file name");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    // Receiving server response ("Ok" or "No file")
+    ret = recv(socketFD, responseMsg, sizeof(responseMsg), 0);
+    if (ret == -1)
+    {
+        perror("Failed to receive message");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+    responseMsg[ret] = '\0';
+
+    if (strcmp("No file", responseMsg) == 0)
+    {
+        printf("File is not present on the server\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return 0;
+    }
+
+    if (strcmp("No Read access", responseMsg) == 0)
+    {
+        printf("Permission denied\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return 0;
+    }
+
+    if (strcmp("Ok", responseMsg) != 0)
+    {
+        printf("Error: Server is not sending files\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1;
+    }
+
+    // Confirming to send the file
+    ret = send(socketFD, "Send", strlen("Send"), 0);
+    if (ret < 0)
+    {
+        printf("Error sending confirmation to receive file\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1;
+    }
+    while ((ret = recv(socketFD, buffer, BUFFER_SIZE, 0)) > 0)
+    {
+        if (write(fileDescriptor, buffer, ret) <= 0)
+        {
+            perror("Error writing to the file");
+            close(fileDescriptor);
+            close(socketFD);
+            return -1; 
+        }
+        if (ret < BUFFER_SIZE)
+        {
+            break;
+        }
+    }
+
+    if (ret < 0)
+    {
+        perror("Error receiving file data");
+    }
+
+    close(fileDescriptor);
+    close(socketFD);
+    return 1; // Success
+}
+
+// Function to send data to the server
+int sendFileData(const char *fileName, const char *serverIP, int serverPort, struct user *user,char *temporary_file)
+{
+    int fileDescriptor = open(temporary_file, O_RDONLY);
+    if (fileDescriptor < 0)
+    {
+        perror("Error opening file for reading");
+        return -1; 
+    }
+
+    int socketFD, ret;
+    struct sockaddr_in serverAddress;
+    char buffer[BUFFER_SIZE] = {0};
+    char responseMsg[5];
+
+    // Creating a socket
+    if ((socketFD = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("Socket creation error");
+        close(fileDescriptor);
+        return -1; 
+    }
+
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(serverPort);
+
+    if (inet_pton(AF_INET, serverIP, &serverAddress.sin_addr) <= 0)
+    {
+        perror("Invalid address/ Address not supported");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    // Connecting to the server
+    if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        perror("Connection Failed");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    // Sending action request ("Create/Store")
+    ret = send(socketFD, "Create/Store", strlen("Create/Store"), 0);
+    if (ret == -1)
+    {
+        perror("Failed to send Create/Store request");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    ret = recv(socketFD, responseMsg, sizeof(responseMsg) - 1, 0);
+    responseMsg[ret] = '\0';
+    if (strcmp("Ok", responseMsg) != 0)
+    {
+        printf("Error: Server did not acknowledge the request\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1;
+    }
+
+    // Sending the file name to the server
+    char updatedName[150];
+    strcpy(updatedName, user->username);
+    strcat(updatedName, "/");
+    strcat(updatedName, fileName);
+    ret = send(socketFD, updatedName, strlen(updatedName), 0);
+    if (ret == -1)
+    {
+        perror("Failed to send file name");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    // Receiving server response ("Ok")
+    ret = recv(socketFD, responseMsg, sizeof(responseMsg), 0);
+    if (ret == -1)
+    {
+        perror("Failed to receive message");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    if (strcmp(responseMsg, "Ok") != 0)
+    {
+        printf("Server is not accepting the file\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+
+    // Sending file data to the server
+    int bytesRead;
+    while ((bytesRead = read(fileDescriptor, buffer, BUFFER_SIZE)) > 0)
+    {
+        ret = send(socketFD, buffer, bytesRead, 0);
+        if (ret == -1)
+        {
+            perror("Failed to send file");
+            close(fileDescriptor);
+            close(socketFD);
+            return -1; 
+        }
+        if (bytesRead < BUFFER_SIZE)
+        {
+            break;
+        }
+    }
+
+    char serverResponse[15];
+    ret = recv(socketFD, serverResponse, sizeof(serverResponse), 0);
+    if (ret == -1)
+    {
+        perror("Failed to receive message");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+    serverResponse[ret] = '\0';
+    printf("Server response: %s\n", serverResponse);
+    close(fileDescriptor);
+    close(socketFD);
+    return 1; // Success
+}
+
+int executeCommand(const char *command)
+{
+    int returnValue = system(command);
+
+    if (returnValue == -1)
+    {
+        perror("Error executing command");
+        return 0; 
+    }
+
+    return 1; // Success
+}
+int checkFilePresence(char *filename, const char *serverIP, int serverPort)
+{
+
+    char responseMsg[MSG_SIZE];
+    int socketFD, ret;
+    struct sockaddr_in serverAddress;
+    char buffer[BUFFER_SIZE] = {0};
+
+    // Creating a socket
+    if ((socketFD = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("Socket creation error");
+        return -1; 
+    }
+
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(serverPort);
+
+    if (inet_pton(AF_INET, serverIP, &serverAddress.sin_addr) <= 0)
+    {
+        perror("Invalid address/ Address not supported");
+        close(socketFD);
+        return -1; 
+    }
+
+    // Connecting to the server
+    if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        perror("Connection Failed");
+        close(socketFD);
+        return -1; 
+    }
+    ret = send(socketFD, "FilePresence", strlen("FilePresence"), 0);
+    if (ret < 0)
+    {
+        perror("Sending Error \n");
+        return 0;
+    }
+    ret = recv(socketFD, responseMsg, MSG_SIZE, 0);
+    if (ret < 0)
+    {
+        perror("Error in reciving\n");
+        return 0;
+    }
+    responseMsg[ret] = '\0';
+    if (strcmp(responseMsg, "Filename") == 0)
+    {
+        ret = send(socketFD, filename, sizeof(filename), 0);
+        if (ret < 0)
+        {
+            perror("Sending Error \n");
+            return 0;
+        }
+        ret = recv(socketFD, responseMsg, MSG_SIZE, 0);
+        if (ret < 0)
+        {
+            perror("Error in reciving\n");
+            return 0;
+        }
+        responseMsg[ret] = '\0';
+        if (strcmp(responseMsg, "No file") == 0)
+        {
+            return 0; // file not present
+        }
+        else
+        {
+            return 1; // file present
+        }
+    }
+    else
+    {
+
+        perror("Something wrong in connection\n");
+    }
+}
+
+int changePermission(const char *fileName, const char *serverIP, int serverPort, struct user *user)
+{
+    char responseMsg[MSG_SIZE];
+    int socketFD, ret;
+    struct sockaddr_in serverAddress;
+    char buffer[BUFFER_SIZE] = {0};
+
+    // Creating a socket
+    if ((socketFD = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("Socket creation error");
+        return -1; 
+    }
+
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(serverPort);
+
+    if (inet_pton(AF_INET, serverIP, &serverAddress.sin_addr) <= 0)
+    {
+        perror("Invalid address/ Address not supported");
+        close(socketFD);
+        return -1; 
+    }
+
+    // Connecting to the server
+    if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        perror("Connection Failed");
+        close(socketFD);
+        return -1; 
+    }
+    ret = send(socketFD, "ChangePerm", strlen("ChangePerm"), 0);
+    if (ret < 0)
+    {
+        perror("Sending Error \n");
+        return 0;
+    }
+    ret = recv(socketFD, responseMsg, MSG_SIZE, 0);
+    if (ret < 0)
+    {
+        perror("Error in reciving\n");
+        return 0;
+    }
+    responseMsg[ret] = '\0';
+    if (strcmp(responseMsg, "ChangePerm") == 0)
+    {
+        char updatedName[381];
+        strcpy(updatedName, fileName);
+        strcat(updatedName, "/");
+        strcat(updatedName, user->username);
+        printf("%s\n", updatedName);
+        ret = send(socketFD, updatedName, sizeof(updatedName), 0);
+        if (ret < 0)
+        {
+            perror("Sending Error \n");
+            return 0;
+        }
+        ret = recv(socketFD, responseMsg, MSG_SIZE, 0);
+
+        if (ret < 0)
+        {
+            perror("Error in reciving\n");
+            return 0;
+        }
+        responseMsg[ret] = '\0';
+        printf("%s\n", responseMsg);
+        if (strcmp(responseMsg, "0") == 0)
+        {
+            printf("Successfully updated!\n");
+            return 0; // file not present
+        }
+        if (strcmp(responseMsg, "1") == 0)
+        {
+            printf("You are not the creator of the file, so not able to change the permission\n");
+            return 0; // file not present
+        }
+        if (strcmp(responseMsg, "2") == 0)
+        {
+            printf("no such file!\n");
+            return 0; // file not present
+        }
+        if (strcmp(responseMsg, "3") == 0)
+        {
+            printf("wrong input!\n");
+            return 0; // file not present
+        }
+        else
+        {
+            printf("something went wrong!\n");
+        }
+    }
+    else
+    {
+        perror("Something wrong in connection\n");
+    }
+}
+int fetch_available_files(const char *serverIP, int serverPort, struct user *user){
+    int socketFD, ret;
+    struct sockaddr_in serverAddress;
+    char buffer[BUFFER_SIZE] = {0};
+    char responseMsg[MSG_SIZE];
+    char url[150];
+    int byteRead;
+    strcpy(url,user->username);
+    // Creating a socket
+    if ((socketFD = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("Socket creation error");
+        
+        return -1; 
+    }
+
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(serverPort);
+
+    if (inet_pton(AF_INET, serverIP, &serverAddress.sin_addr) <= 0)
+    {
+        perror("Invalid address/ Address not supported");
+        close(socketFD);
+        return -1; 
+    }
+
+    // Connecting to the server
+    if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        perror("Connection Failed");
+        close(socketFD);
+        return -1; 
+    }
+    if(send(socketFD,"AvailableFile",sizeof("AvailableFile"),0)<0){
+        perror("Error: ");
+        close(socketFD);
+        return -1;
+    }
+    if((byteRead=recv(socketFD,responseMsg,MSG_SIZE,0))<0){
+        perror("Error : ");
+        close(socketFD);
+        return -1;
+    }
+    responseMsg[byteRead]='\0';
+    if(strcmp(responseMsg,"Ok")!=0){
+        printf("Something wrong with server\n");
+        close(socketFD);
+        return -1;
+
+    }
+    //Creating the request
+    strcat(url,"/fileAndPermision");
+    if(send(socketFD,url,sizeof(url),0)<0){
+        perror("Error :");
+        close(socketFD);
+        return -1;
+    }
+    int i=0;
+    while(1){
+        if((byteRead=recv(socketFD,buffer,BUFFER_SIZE,0))<0){
+            perror("Error : ");
+        }
+        buffer[byteRead]='\0';
+        if(strcmp(buffer,"END")==0){
+            printf("------------------------That's all------------------------");
+            close(socketFD);
+            return 1;
+        }
+        else{
+            printf("%d)%s\n",i,buffer);
+            i++;
+            send(socketFD,"Ok",sizeof("Ok"),0);
+        }
+
+    }return 1;
+}
