@@ -887,6 +887,7 @@ int fetch_available_files(const char *serverIP, int serverPort, struct user *use
         close(socketFD);
         return -1;
     }
+   
     int i=0;
     while(1){
         if((byteRead=recv(socketFD,buffer,BUFFER_SIZE,0))<0){
@@ -894,11 +895,17 @@ int fetch_available_files(const char *serverIP, int serverPort, struct user *use
         }
         buffer[byteRead]='\0';
         if(strcmp(buffer,"END")==0){
+            if(i==0)
+                printf("No files to show\n");
             printf("------------------------That's all------------------------");
             close(socketFD);
             return 1;
         }
+        
         else{
+            if(i==0){
+                printf("Available files and permsion\tOwner of file\n");
+            }
             printf("%d)%s\n",i,buffer);
             i++;
             send(socketFD,"Ok",strlen("Ok"),0);
@@ -1053,10 +1060,11 @@ int changeFileName(struct user* userName,char* oldname,char*newName,const char* 
     }
     responseMsg[ret]='\0';
     if(strcmp(responseMsg,"done")==0){
+        printf("File name has been changed\n");
         return 1;
     }
     else{
-        printf("File doesn't exist\n");
+        printf("File doesn't exist Or you are not the owner of file\n");
     }close(socketFD);
     return -1;
 }

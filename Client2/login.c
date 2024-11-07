@@ -236,4 +236,4 @@ loginPage(int serverPort, const char *serverIP)
         }
     } while (done == 0);
     return user;
-}
+} 

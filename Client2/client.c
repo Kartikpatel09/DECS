@@ -25,7 +25,8 @@ int main(int argc, char *argv[])
         int cachingFalg = 0;
         strcpy(temporary_file, dir);
 
-        printf("-------------------------------Options Available--------------------------------\n");
+        printf("\n\n-----------------------Options Available------------------------\n");
+        printf("\tHello user : %s\n",user->username);
         printf("Enter the task that you want to perform:\n");
         printf("Enter 1 for creating and storing a new file on the server\n");
         printf("Enter 2 for opening file in (R/W) mode \n");
@@ -39,7 +40,7 @@ int main(int argc, char *argv[])
         printf("Enter your choice: ");
         scanf("%d", &inputChoice);
         char fileName[FILENAME_MAX_LENGTH];
-        printf("--------------------------------------------------------------------------------\n");
+        printf("\n--------------------------------------------------------------------------------\n");
 
         switch (inputChoice)
         {
@@ -158,7 +159,7 @@ int main(int argc, char *argv[])
                 printf("\nFile has succesfully stored in %s\n", fileName);
             }
 
-            printf("-----------------File content starts File name: %s--------------------------\n", fileName);
+            printf("-----------------File content starts File name: %s-----------------\n\n", fileName);
             if (!cachingFalg)
             {
                 if ((rec = receiveFileData(fileName, serverIP, serverPort, user, temporary_file)) == -1)
@@ -177,7 +178,7 @@ int main(int argc, char *argv[])
                 printf("Error opening the file\n");
                 return -1;
             }
-            printf("------------------------------File content over------------------------------\n");
+            printf("\n\n------------------------------File content over------------------------------\n");
 
             break;
         case 4:
