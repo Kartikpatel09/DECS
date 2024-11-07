@@ -1,18 +1,21 @@
 #include "headers.h"
 #define MAX_CLIENTS 1024
 #define BUFFER_SIZE 1024
-#define FILENAME_MAX_LENGTH 128
-#define COMMAND_SIZE 512
+#define FILENAME_MAX_LENGTH 256
+#define COMMAND_SIZE 800
 #define MAX_URL_LENGTH 256
 #define ACCESS_DATA_SIZE 2333
 #define MSG_SIZE 20
 #define MAX_THREADS 50
+#define SUCCESS 1
+#define FAILURE 0
+#define ERROR -1
 struct user
 {
     char username[50];
     char password[50];
 };
-char *delimiter="_empty_";
+char *delimiter = "_empty_";
 typedef struct
 {
     char filename[256];
@@ -32,6 +35,8 @@ typedef struct
     pthread_mutex_t lock;
 } File_Lock;
 File_Lock file_lock[MAX_THREADS];
+int is_file_on_server(char *filename, char *userName, int flag);
+int changeFileName(char *userName, char *oldfileName, char *newfileName);
 //------------------------------------LOCK CODE-------------------------------------------------------------------
 // function to initialize file lock
 void initialize_lock()
@@ -89,35 +94,40 @@ int BashexecuteCommand(char *command)
     if (returnValue == -1)
     {
         perror("Error executing command");
-        return 0; 
+        return ERROR;
     }
 
-    return 1; // Success
+    return SUCCESS; // Success
 }
 int populateAccess(char *filename, char *user, char *command, char *timestemp)
-{   int Flag=1;   
-    if(access(filename, F_OK)!=0){
+{
+    int Flag = 1;
+    if (strcmp(command, "create") == 0)
+    {
+        char command[COMMAND_SIZE];
+        snprintf(command, sizeof(command), "touch _data_/%s_%s", user, filename);
+        BashexecuteCommand(command);
         int file_fd = open("_metadata_/access.dat", O_CREAT | O_RDWR);
         if (file_fd < 0)
         {
             perror("Error opening file");
             exit(0);
         }
-        
+
         accessData *acc = (accessData *)malloc(sizeof(accessData));
-        
+
         char buff[ACCESS_DATA_SIZE];
         strcpy(acc->filename, filename);
         strcpy(acc->creator, user);
         strcpy(acc->readUsers[0], user);
         for (int i = 1; i < 20; i++)
         {
-            strncpy(acc->readUsers[i], delimiter,50);
+            strncpy(acc->readUsers[i], delimiter, 50);
         }
         strcpy(acc->writeUsers[0], user);
         for (int i = 1; i < 20; i++)
         {
-            strncpy(acc->writeUsers[i], delimiter,50);
+            strncpy(acc->writeUsers[i], delimiter, 50);
         }
         sprintf(acc->numWriters, "%d", 1);
         sprintf(acc->numReaders, "%d", 1);
@@ -129,11 +139,13 @@ int populateAccess(char *filename, char *user, char *command, char *timestemp)
         }
         struct tm *tm_info = localtime(&curr_time);
         strftime(timestemp, 20, "%Y-%m-%d %H:%M:%S", tm_info);
-        strncpy(acc->timestemp,timestemp,20);
-        int f=0;
-        while(read(file_fd,buff,ACCESS_DATA_SIZE)>0){
-            if(strncmp(buff,delimiter,256)==0){
-                lseek(file_fd,-ACCESS_DATA_SIZE,SEEK_CUR);
+        strncpy(acc->timestemp, timestemp, 20);
+        int f = 0;
+        while (read(file_fd, buff, ACCESS_DATA_SIZE) > 0)
+        {
+            if (strncmp(buff, delimiter, 256) == 0)
+            {
+                lseek(file_fd, -ACCESS_DATA_SIZE, SEEK_CUR);
                 write(file_fd, acc->filename, sizeof(acc->filename));
                 write(file_fd, acc->creator, sizeof(acc->creator));
                 write(file_fd, acc->readUsers, sizeof(acc->readUsers));
@@ -143,14 +155,17 @@ int populateAccess(char *filename, char *user, char *command, char *timestemp)
                 write(file_fd, timestemp, 20);
                 write(file_fd, "\n", 1);
                 close(file_fd);
-                f=1;
-                Flag=0;
-            }if(f){break;}
+                f = 1;
+                Flag = 0;
+            }
+            if (f)
+            {
+                break;
+            }
         }
-        
-}
+    }
 
-    if (access(filename, F_OK) != 0 && Flag)
+    if (strcmp(command, "create") == 0 && Flag)
     {
         int file_fd = open("_metadata_/access.dat", O_CREAT | O_APPEND | O_RDWR);
         if (file_fd < 0)
@@ -164,12 +179,12 @@ int populateAccess(char *filename, char *user, char *command, char *timestemp)
         strcpy(acc->readUsers[0], user);
         for (int i = 1; i < 20; i++)
         {
-            strncpy(acc->readUsers[i], delimiter,50);
+            strncpy(acc->readUsers[i], delimiter, 50);
         }
         strcpy(acc->writeUsers[0], user);
         for (int i = 1; i < 20; i++)
         {
-            strncpy(acc->writeUsers[i], delimiter,50);
+            strncpy(acc->writeUsers[i], delimiter, 50);
         }
         sprintf(acc->numWriters, "%d", 1);
         sprintf(acc->numReaders, "%d", 1);
@@ -225,7 +240,7 @@ int populateAccess(char *filename, char *user, char *command, char *timestemp)
         }
         return readAccess;
     }
-    else if (strcmp(command, "Create/Store") == 0)
+    else if (strcmp(command, "store") == 0)
     {
         int flag = 0;
         int file_fd = open("_metadata_/access.dat", O_RDWR);
@@ -271,7 +286,7 @@ int sendFileData(const char *filename, int connection_fd)
     if (my_file_lock == NULL)
     {
         fprintf(stderr, "No available lock for the file: %s\n", filename);
-        return -1;
+        return ERROR;
     }
 
     int file_fd = open(filename, O_RDONLY);
@@ -279,7 +294,7 @@ int sendFileData(const char *filename, int connection_fd)
     {
         perror("Error opening file");
 
-        return -1;
+        return ERROR;
     }
 
     char buffer[BUFFER_SIZE];
@@ -296,7 +311,7 @@ int sendFileData(const char *filename, int connection_fd)
         {
             perror("Error in sending data");
             close(file_fd);
-            return -1;
+            return ERROR;
         }
     }
 
@@ -314,11 +329,12 @@ int sendFileData(const char *filename, int connection_fd)
     printf("File request satisfied\n");
     close(file_fd);
 
-    return 1;
+    return SUCCESS;
 }
 // Function to receive file data from the client
 int receiveFileData(const char *filename, int connection_fd)
 {
+
     File_Lock *my_file_lock = getLock(filename);
     if (my_file_lock == NULL)
     {
@@ -344,7 +360,7 @@ int receiveFileData(const char *filename, int connection_fd)
         {
             printf("Error writing to file\n");
             close(file_fd);
-            return -1;
+            return ERROR;
         }
         if (bytesReceived < BUFFER_SIZE)
         {
@@ -365,7 +381,7 @@ int receiveFileData(const char *filename, int connection_fd)
     printf("File saved\n");
     close(file_fd);
 
-    return 1;
+    return SUCCESS;
 }
 int executeCommand(int connection_fd, char *command)
 {
@@ -373,62 +389,54 @@ int executeCommand(int connection_fd, char *command)
     if (result <= 0)
     {
         printf("Error sending acknowledgment\n");
-        return -1;
+        return ERROR;
     }
     char url[MAX_URL_LENGTH];
     if (strcmp("Fetch", command) == 0)
     {
-        result = recv(connection_fd, url, FILENAME_MAX_LENGTH, 0);
-        if (result <= 0)
+        result = recv(connection_fd, url, sizeof(url), 0);
+        if (result < 0)
         {
             printf("Error in receiving filename\n");
-            return -1;
+            return ERROR;
         }
         url[result] = '\0';
         char *user = strtok(url, "/");
         char *filename = strtok(NULL, "/");
-        if (access(filename, F_OK) != 0)
+        if (is_file_on_server(filename, user,1) == -1)
         {
             send(connection_fd, "No file", strlen("No file"), 0);
-            return -1;
+            return ERROR;
         }
         else
         {
             char tstemp[20];
             int readAccess = populateAccess(filename, user, command, tstemp);
-
+            printf("Readaces %d\n", readAccess);
             if (readAccess == -1)
             {
                 int result = send(connection_fd, "No Read access", strlen("No Read access"), 0);
-                if (result <= 0)
+                if (result < 0)
                 {
-                    printf("Error sending read access\n");
-                    return -1;
+                    perror("Error sending read access\n");
+                    return ERROR;
                 }
             }
             else
             {
                 char request[MSG_SIZE];
                 send(connection_fd, "Ok", strlen("Ok"), 0);
-                // result = recv(connection_fd, request, sizeof(request), 0);
-                // if(result<0){
-                //     perror("Error at timestep: ");
-                // }
-                // request[result]='\0';
-                // if(strcmp(request,"TimeStemp")==0){
-                //     result=send(connection_fd,tstemp,20,0);
-                //     printf("Value of result after sending %s\n",(tstemp));
-                // }
-                // else{exit(0);}
                 result = recv(connection_fd, request, sizeof(request), 0);
                 request[result] = '\0';
                 if (result < 0)
                 {
-                    return -1;
+                    return ERROR;
                 }
                 if (strcmp(request, "Send") == 0)
                 {
-                    sendFileData(filename, connection_fd);
+                    char newfile[150];
+                    snprintf(newfile, sizeof(newfile), "_data_/%s_%s", user, filename);
+                    sendFileData(newfile, connection_fd);
                 }
                 else if (strcmp(request, "Cached") == 0)
                 {
@@ -436,13 +444,14 @@ int executeCommand(int connection_fd, char *command)
                     if (result < 0)
                     {
                         perror("Error at timestemp sending");
+                        return ERROR;
                     }
                     close(connection_fd);
                 }
                 else
                 {
                     printf("Unexpected request received: %s and res: %d\n", command, result);
-                    return -1;
+                    return ERROR;
                 }
             }
         }
@@ -454,31 +463,67 @@ int executeCommand(int connection_fd, char *command)
         if (result <= 0)
         {
             printf("Error in receiving filename\n");
-            return -1;
+            return ERROR;
         }
         url[result] = '\0';
         char *user = strtok(url, "/");
         char *filename = strtok(NULL, "/");
+        char choice[MSG_SIZE];
+        if (send(connection_fd, "Choice", strlen("Choice"), 0) < 0)
+        {
+            perror("Error at:");
+            close(connection_fd);
+            return -1;
+        }
+        result = recv(connection_fd, choice, MSG_SIZE, 0);
+        if (result < 0)
+        {
+            printf("Error in receiving choice\n");
+            close(connection_fd);
+            return ERROR;
+        }
+        if (strcmp(choice, "create") == 0)
+        {
+            if (is_file_on_server(filename, user,1) != -1)
+            {
+                send(connection_fd, "File exist", strlen("File exist"), 0);
+                close(connection_fd);
+                return SUCCESS;
+            }
+        }
+
         time_t curr_time = time(NULL);
         if (curr_time == ((time_t)-1))
         {
             perror("Failed to obtain the current time");
             return 1;
         }
-        struct tm *tm_info = localtime(&curr_time); 
+        struct tm *tm_info = localtime(&curr_time);
         strftime(tstemp, 20, "%Y-%m-%d %H:%M:%S", tm_info);
-        int writeAcess = populateAccess(filename, user, command, tstemp);
+        int writeAcess;
+        if (strcmp(choice, "create") == 0)
+        {
+            writeAcess = populateAccess(filename, user, choice, tstemp);
+        }
+        else
+        {
+            writeAcess = populateAccess(filename, user, choice, tstemp);
+        }
         printf("WriteAcess value:%d\n", writeAcess);
         if (writeAcess == -1)
         {
             send(connection_fd, "AD", strlen("AD"), 0);
+            close(connection_fd);
         }
         else
         {
             send(connection_fd, "Ok", strlen("Ok"), 0);
-            receiveFileData(filename, connection_fd);
+            char newfile[150];
+            snprintf(newfile, sizeof(newfile), "_data_/%s_%s", user, filename);
+            receiveFileData(newfile, connection_fd);
         }
     }
+    
     else
     {
         printf("Unknown command received: %s\n", command);
@@ -593,7 +638,12 @@ void checkFileUser(char *fileUser, int connection_fd)
         i++;
         tok = strtok(NULL, "/");
     }
-
+    if (is_file_on_server(fileUserSep[0], fileUserSep[3],1) != -1)
+    {
+        send(connection_fd, "File exist", strlen("File exist"), 0);
+        close(connection_fd);
+        return;
+    }
     // response 1 - user is not creator
     // response 3 - wrong read, write
     while ((bytesRead = read(file_fd, buffer, ACCESS_DATA_SIZE)) > 0)
@@ -620,43 +670,53 @@ void checkFileUser(char *fileUser, int connection_fd)
                 if (!strcmp(fileUserSep[1], "read") && (!strcmp(fileUserSep[2], "invoke") || !strcmp(fileUserSep[2], "revoke")))
                 {
                     if (!strcmp(fileUserSep[2], "invoke"))
-                    {   int flag=0;
+                    {
+                        int flag = 0;
                         for (int i = 1; i < 20; i++)
                         {
                             if (strcmp(buffer + 306 + i * 50, delimiter) == 0)
-                            {   
-                                strncpy(buffer+306+i*50,fileUserSep[3],50);
+                            {
+                                strncpy(buffer + 306 + i * 50, fileUserSep[3], 50);
                                 numReaders++;
                                 char numReaderStr[3];
                                 sprintf(numReaderStr, "%d", numReaders);
-                                strncpy(buffer+2306,numReaderStr,3);
-                                if(write(file_fd,buffer,ACCESS_DATA_SIZE)<0){
+                                strncpy(buffer + 2306, numReaderStr, 3);
+                                if (write(file_fd, buffer, ACCESS_DATA_SIZE) < 0)
+                                {
                                     perror("Error in setting permision: ");
                                 }
 
-                               flag=1;
-                            }if(flag){break;}
+                                flag = 1;
+                            }
+                            if (flag)
+                            {
+                                break;
+                            }
                         }
                     }
                     else
                     {
                         printf("revoking read\n");
-                        int flag=0;
+                        int flag = 0;
                         for (int i = 0; i < 20; i++)
                         {
                             if (!strcmp(&buffer[306 + (i * 50)], fileUserSep[3]))
                             {
-                                strncpy(buffer+306+i*50,delimiter,50);
+                                strncpy(buffer + 306 + i * 50, delimiter, 50);
                                 numReaders--;
                                 char numReaderStr[3];
                                 sprintf(numReaderStr, "%d", numReaders);
-                                strncpy(buffer+2306,numReaderStr,3);
-                                if(write(file_fd,buffer,ACCESS_DATA_SIZE)<0){
+                                strncpy(buffer + 2306, numReaderStr, 3);
+                                if (write(file_fd, buffer, ACCESS_DATA_SIZE) < 0)
+                                {
                                     perror("Error in setting permision: ");
                                 }
-                                flag=1;
-                               
-                            }if(flag){break;}
+                                flag = 1;
+                            }
+                            if (flag)
+                            {
+                                break;
+                            }
                         }
                     }
                 }
@@ -664,41 +724,52 @@ void checkFileUser(char *fileUser, int connection_fd)
                 {
                     if (!strcmp(fileUserSep[2], "invoke"))
                     {
-                        int flag=0;
+                        int flag = 0;
                         for (int i = 1; i < 20; i++)
                         {
                             if (strcmp(buffer + 1306 + i * 50, delimiter) == 0)
-                            {   
-                                strncpy(buffer+1306+i*50,fileUserSep[3],50);
+                            {
+                                strncpy(buffer + 1306 + i * 50, fileUserSep[3], 50);
                                 numWriters++;
                                 char numWriterStr[3];
                                 sprintf(numWriterStr, "%d", numWriters);
-                                strncpy(buffer+2306,numWriterStr,3);
-                                if(write(file_fd,buffer,ACCESS_DATA_SIZE)<0){
+                                strncpy(buffer + 2306, numWriterStr, 3);
+                                if (write(file_fd, buffer, ACCESS_DATA_SIZE) < 0)
+                                {
                                     perror("Error in setting permision: ");
                                 }
 
-                               flag=1;
-                            }if(flag){break;}
+                                flag = 1;
+                            }
+                            if (flag)
+                            {
+                                break;
+                            }
                         }
                     }
                     else
-                    {   int flag=0;
+                    {
+                        int flag = 0;
                         for (int i = 1; i < 20; i++)
                         {
                             if (strcmp(buffer + 306 + i * 50, fileUserSep[3]) == 0)
-                            {   
-                                strncpy(buffer+306+i*50,delimiter,50);
+                            {
+                                strncpy(buffer + 306 + i * 50, delimiter, 50);
                                 numWriters--;
                                 char numWriterStr[3];
                                 sprintf(numWriterStr, "%d", numWriters);
-                                strncpy(buffer+2306,numWriterStr,3);
-                                if(write(file_fd,buffer,ACCESS_DATA_SIZE)<0){
+                                strncpy(buffer + 2306, numWriterStr, 3);
+                                if (write(file_fd, buffer, ACCESS_DATA_SIZE) < 0)
+                                {
                                     perror("Error in setting permision: ");
                                 }
 
-                               flag=1;
-                            }if(flag){break;}
+                                flag = 1;
+                            }
+                            if (flag)
+                            {
+                                break;
+                            }
                         }
                     }
                 }
@@ -818,60 +889,148 @@ void listfile(int connection_fd)
         close(connection_fd);
         return;
     }
-    close(connection_fd);
+    
 }
-int is_file_on_server(char *filename)
-{   int pos=-1;
+
+int is_file_on_server(char *filename, char *userName, int flag)
+{
+    int pos = -1;
+
     int file_fd = open("_metadata_/access.dat", O_RDONLY);
-    char buff[ACCESS_DATA_SIZE];
     if (file_fd < 0)
     {
-        printf("File doesn't exit\n");
-        return pos;
+        perror("Error opening access file");
+        return -1; // Return -1 to indicate failure
     }
 
+    char buff[ACCESS_DATA_SIZE];
     while (read(file_fd, buff, ACCESS_DATA_SIZE) > 0)
-    {   pos++;
-        if (strncmp(buff, filename,256) == 0)
+    {
+        pos++;
+
+        // Check if the filename matches
+        if (strncmp(buff, filename, 256) == 0)
         {
-            return pos;
+            // Check if user is the creator
+            if (strncmp(buff + 256, userName, 50) == 0)
+            {
+                close(file_fd);
+                return pos;
+            }
+
+            if (flag)
+            {
+                // Check if the user is listed in readUsers
+                for (int i = 0; i < 20; i++)
+                {
+                    if (strcmp(buff + 306 + 50 * i, userName) == 0)
+                    {
+                        close(file_fd);
+                        return pos;
+                    }
+                }
+
+                // Check if the user is listed in writeUsers
+                for (int i = 0; i < 20; i++)
+                {
+                    if (strcmp(buff + 1306 + 50 * i, userName) == 0)
+                    {
+                        close(file_fd);
+                        return pos;
+                    }
+                }
+            }
         }
     }
-    return pos;
+
+    close(file_fd);
+    return -1; // Return -1 if no matching record is found
 }
-int delet(char* URL){
+
+int delet(char *URL)
+{
     //-1 file doesn't exist or error
-    //0 you don't have permision
-    char url[150];
+    // 0 you don't have permision
+    char url[MAX_URL_LENGTH];
     char buff[ACCESS_DATA_SIZE];
-    strcpy(url,URL);
-    char* username=strtok(url,"/");
-    char *filename=strtok(NULL,"");
-    int index=is_file_on_server(filename);
-    if(index==-1){
+    strcpy(url, URL);
+    char *username = strtok(url, "/");
+    char *filename = strtok(NULL, "");
+    int index = is_file_on_server(filename, username,1);
+    if (index == -1)
+    {
         return -1;
     }
-    int file_descriptor=open("_metadata_/access.dat",O_RDWR);
-    lseek(file_descriptor,ACCESS_DATA_SIZE*index,SEEK_SET);
-    if(read(file_descriptor,buff,ACCESS_DATA_SIZE)<0){
+    int file_descriptor = open("_metadata_/access.dat", O_RDWR);
+    lseek(file_descriptor, ACCESS_DATA_SIZE * index, SEEK_SET);
+    if (read(file_descriptor, buff, ACCESS_DATA_SIZE) < 0)
+    {
         perror("Error at ");
         close(file_descriptor);
         return 0;
     }
-    if(strncmp(buff+256,username,50)!=0){
+    if (strncmp(buff + 256, username, 50) != 0)
+    {
         return 0;
     }
-    strncpy(buff,delimiter,256);
-    lseek(file_descriptor,ACCESS_DATA_SIZE*index,SEEK_SET);
-    if(write(file_descriptor,buff,ACCESS_DATA_SIZE)<0){
+    strncpy(buff, delimiter, 256);
+    lseek(file_descriptor, ACCESS_DATA_SIZE * index, SEEK_SET);
+    if (write(file_descriptor, buff, ACCESS_DATA_SIZE) < 0)
+    {
         perror("Error at ");
         close(file_descriptor);
         return 0;
     }
-    char cmd[100];
-    snprintf(cmd,sizeof(cmd),"rm %s",filename);
+    char cmd[COMMAND_SIZE];
+    snprintf(cmd, sizeof(cmd), "rm _data_/%s_%s", username, filename);
     BashexecuteCommand(cmd);
     close(file_descriptor);
     return 1;
+}
 
+
+int changeFileName(char *userName, char *oldfileName, char *newfileName)
+{   
+    int index = is_file_on_server(oldfileName, userName, 0);
+    if (index == -1)
+    {
+        return -1;
+    }
+
+    char buff[ACCESS_DATA_SIZE];
+    char oldname_server[FILENAME_MAX_LENGTH];
+    char newname_server[FILENAME_MAX_LENGTH];
+    char command[COMMAND_SIZE];
+
+    int fileDescriptor = open("_metadata_/access.dat", O_RDWR);
+    if (fileDescriptor < 0) {
+        perror("Error opening access.dat");
+        return -1;
+    }
+
+    lseek(fileDescriptor, ACCESS_DATA_SIZE * index, SEEK_SET);
+    if (read(fileDescriptor, buff, ACCESS_DATA_SIZE) < 0) {
+        perror("Error reading");
+        close(fileDescriptor);
+        return -1;
+    }
+
+    strncpy(buff, newfileName, 256);
+    lseek(fileDescriptor, ACCESS_DATA_SIZE * index, SEEK_SET);
+    if (write(fileDescriptor, buff, ACCESS_DATA_SIZE) < 0) {
+        perror("Error writing");
+        close(fileDescriptor);
+        return -1;
+    }
+    close(fileDescriptor);
+
+    // Construct the old and new server paths
+    snprintf(oldname_server, sizeof(oldname_server), "%s_%s", userName, oldfileName);
+    snprintf(newname_server, sizeof(newname_server), "%s_%s", userName, newfileName);
+
+    // Create and execute the command
+    snprintf(command, sizeof(command), "mv _data_/%s _data_/%s", oldname_server, newname_server);
+    BashexecuteCommand(command);
+
+    return 1;
 }

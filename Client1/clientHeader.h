@@ -1,10 +1,13 @@
 #include "headers.h"
 #include <time.h>
 #define BUFFER_SIZE 1024
-#define FILENAME_MAX_LENGTH 128 // Increased filename buffer length
+#define FILENAME_MAX_LENGTH 256 // Increased filename buffer length
 #define MSG_SIZE 20
-#define COMMAND_SIZE 620
+#define COMMAND_SIZE 800
 #define TIMESTAMP_LENGTH 20
+#define SUCCESS 1
+#define FAILURE 0
+#define ERROR -1
 struct user
 {
     char username[50];
@@ -71,7 +74,7 @@ int Insert(char *filename, char *timestemp,int flag) {
     int fileDescriptor = open("_cache_/access.dat", O_RDWR);
     if (fileDescriptor < 0) {
         perror("Error opening file");
-        return 0;
+        return ERROR;
     }
     int possition=slot*149;
     if(flag!=-1){
@@ -81,7 +84,7 @@ int Insert(char *filename, char *timestemp,int flag) {
     if (lseek(fileDescriptor, possition, SEEK_SET) == -1) {
         perror("Error seeking in file");
         close(fileDescriptor);
-        return 0;
+        return ERROR;
     }
     slot = (slot + 1) % 4;
     if(slot==0){
@@ -91,25 +94,25 @@ int Insert(char *filename, char *timestemp,int flag) {
     if (write(fileDescriptor, filename, 128) < 0) {
         perror("Error writing filename");
         close(fileDescriptor);
-        return 0;
+        return ERROR;
     }
 
     // Write timestamp 
     if (write(fileDescriptor, timestemp, 20) < 0) {
         perror("Error writing timestamp");
         close(fileDescriptor);
-        return 0;
+        return ERROR;
     }
 
     // Write newline character to separate entries
     if (write(fileDescriptor, "\n", 1) < 0) {
         perror("Error writing newline");
         close(fileDescriptor);
-        return 0;
+        return ERROR;
     }
 
     close(fileDescriptor);
-    return 1;
+    return SUCCESS;
 }
 int search(char* filename){
     int index = 0;
@@ -145,7 +148,7 @@ int isCached(char *filename, const char *serverIP, int serverPort, struct user *
     int socketFD = socket(AF_INET, SOCK_STREAM, 0);
     if (socketFD < 0) {
         perror("Socket creation error");
-        return -1; 
+        return ERROR; 
     }
 
     struct sockaddr_in serverAddress = {0};
@@ -155,21 +158,21 @@ int isCached(char *filename, const char *serverIP, int serverPort, struct user *
     if (inet_pton(AF_INET, serverIP, &serverAddress.sin_addr) <= 0) {
         perror("Invalid address/ Address not supported");
         close(socketFD);
-        return -1; 
+        return ERROR; 
     }
 
     // Connecting to the server
     if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0) {
         perror("Connection Failed");
         close(socketFD);
-        return -1; 
+        return ERROR; 
     }
 
     // Send action request ("Fetch")
     if (send(socketFD, "Fetch", strlen("Fetch"), 0) == -1) {
         perror("Failed to send Fetch request");
         close(socketFD);
-        return -1; 
+        return ERROR; 
     }
 
     // Receive response
@@ -178,14 +181,14 @@ int isCached(char *filename, const char *serverIP, int serverPort, struct user *
     if (ret < 0) {
         perror("Failed to receive message");
         close(socketFD);
-        return -1; 
+        return ERROR; 
     }
     responseMsg[ret] = '\0';
 
     if (strcmp(responseMsg, "Ok") != 0) {
         printf("Unexpected response: %s\n", responseMsg);
         close(socketFD);
-        return -1;
+        return ERROR;
     }
 
     char updatedName[150];
@@ -195,7 +198,7 @@ int isCached(char *filename, const char *serverIP, int serverPort, struct user *
     if (send(socketFD, updatedName, strlen(updatedName), 0) == -1) {
         perror("Failed to send file name");
         close(socketFD);
-        return -1; 
+        return ERROR; 
     }
 
     // Receive server response
@@ -203,7 +206,7 @@ int isCached(char *filename, const char *serverIP, int serverPort, struct user *
     if (ret < 0) {
         perror("Failed to receive message");
         close(socketFD);
-        return -1; 
+        return ERROR; 
     }
     responseMsg[ret] = '\0';
 
@@ -218,7 +221,7 @@ int isCached(char *filename, const char *serverIP, int serverPort, struct user *
     } else if (strcmp("Ok", responseMsg) != 0) {
         printf("Error: Server is not sending files\n");
         close(socketFD);
-        return -1;
+        return 0;
     }
 
     // Request cached timestamp
@@ -409,7 +412,7 @@ int receiveFileData(const char *fileName, const char *serverIP, int serverPort, 
         return 0;
     }
 
-    if (strcmp("No Read access", responseMsg) == 0)
+    else if (strcmp("No Read access", responseMsg) == 0)
     {
         printf("Permission denied\n");
         close(fileDescriptor);
@@ -417,13 +420,15 @@ int receiveFileData(const char *fileName, const char *serverIP, int serverPort, 
         return 0;
     }
 
-    if (strcmp("Ok", responseMsg) != 0)
+    else if (strcmp("Ok", responseMsg) != 0)
     {
-        printf("Error: Server is not sending files\n");
+        printf("response : %s\n",responseMsg);
+        printf("Don't know reason\n");
         close(fileDescriptor);
         close(socketFD);
         return -1;
     }
+    
     // ret=send(socketFD,"TimeStemp",strlen("TimeStemp")+2,0);
     // if(ret<0){
     //     perror("Error at timestemp");
@@ -468,7 +473,7 @@ int receiveFileData(const char *fileName, const char *serverIP, int serverPort, 
 }
 
 // Function to send data to the server
-int sendFileData(const char *fileName, const char *serverIP, int serverPort, struct user *user,char *temporary_file)
+int sendFileData(const char *fileName, const char *serverIP, int serverPort, struct user *user,char *temporary_file,char* choice)
 {
     int fileDescriptor = open(temporary_file,O_CREAT | O_RDONLY);
     if (fileDescriptor < 0)
@@ -543,7 +548,27 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
         close(socketFD);
         return -1; 
     }
-
+    ret = recv(socketFD, responseMsg, sizeof(responseMsg), 0);
+    if (ret == -1)
+    {
+        perror("Failed to receive message");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
+    responseMsg[ret]='\0';
+    if(strcmp(responseMsg,"Choice")!=0){
+        printf("something went wrong");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1;
+    }
+    if(send(socketFD,choice,sizeof(choice),0)<0){
+        perror("Failed to send message");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1; 
+    }
     // Receiving server response ("Ok")
     ret = recv(socketFD, responseMsg, sizeof(responseMsg), 0);
     if (ret == -1)
@@ -554,7 +579,7 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
         return -1; 
     }
     responseMsg[ret]='\0';
-    printf("\nREspnse mesg%s\n",responseMsg);
+    
     if (strcmp(responseMsg, "AD") == 0)
     {
         printf("Acess Denied :You don't have permision to write\n");
@@ -567,6 +592,12 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
         close(fileDescriptor);
         close(socketFD);
         return -1; 
+    }
+    else if(strcmp(responseMsg,"File exist")==0){
+        printf("File already exist use different name\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1;
     }
     // Sending file data to the server
     int bytesRead;
@@ -620,9 +651,8 @@ int rem(char *filename,int flag){
     strcat(delete,filename);
     return executeCommand(delete);
 }
-int checkFilePresence(char *filename, const char *serverIP, int serverPort)
+int checkFilePresence(char *filename, const char *serverIP, int serverPort,struct user* userName)
 {
-    
     char responseMsg[MSG_SIZE];
     int socketFD, ret;
     struct sockaddr_in serverAddress;
@@ -667,14 +697,17 @@ int checkFilePresence(char *filename, const char *serverIP, int serverPort)
     responseMsg[ret] = '\0';
     
     if (strcmp(responseMsg, "Filename") == 0)
-    {
-        ret = send(socketFD, filename, strlen(filename), 0);
+    {   char url[150];
+        strcpy(url,userName->username);
+        strcat(url,"/");
+        strcat(url,filename);
+        ret = send(socketFD, url, strlen(url), 0);
         if (ret < 0)
         {
             perror("Sending Error \n");
             return 0;
         }
-        printf("%s %ld\n",filename,strlen(filename));
+        
         ret = recv(socketFD, responseMsg, MSG_SIZE, 0);
         if (ret < 0)
         {
@@ -748,7 +781,6 @@ int changePermission(const char *fileName, const char *serverIP, int serverPort,
         strcpy(updatedName, fileName);
         strcat(updatedName, "/");
         strcat(updatedName, user->username);
-        printf("%s\n", updatedName);
         ret = send(socketFD, updatedName, sizeof(updatedName), 0);
         if (ret < 0)
         {
@@ -763,7 +795,7 @@ int changePermission(const char *fileName, const char *serverIP, int serverPort,
             return 0;
         }
         responseMsg[ret] = '\0';
-        printf("%s\n", responseMsg);
+        close(socketFD);
         if (strcmp(responseMsg, "0") == 0)
         {
             printf("Successfully updated!\n");
@@ -783,6 +815,10 @@ int changePermission(const char *fileName, const char *serverIP, int serverPort,
         {
             printf("wrong input!\n");
             return 0; // file not present
+        }
+        if(strcmp(responseMsg,"File exist")==0){
+                printf("User already have file with that name\n");
+                return 0;
         }
         else
         {
@@ -949,4 +985,78 @@ char responseMsg[MSG_SIZE];
     else{
         return 0;
     }
+}
+int changeFileName(struct user* userName,char* oldname,char*newName,const char* serverIP,int serverPort){
+    int socketFD, ret;
+    struct sockaddr_in serverAddress;
+    char buffer[BUFFER_SIZE] = {0};
+    char responseMsg[MSG_SIZE];
+
+    // Creating a socket
+    if ((socketFD = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    {
+        perror("Socket creation error");
+        return -1; 
+    }
+
+    serverAddress.sin_family = AF_INET;
+    serverAddress.sin_port = htons(serverPort);
+
+    if (inet_pton(AF_INET, serverIP, &serverAddress.sin_addr) <= 0)
+    {
+        perror("Invalid address/ Address not supported");
+        close(socketFD);
+        return -1; 
+    }
+
+    // Connecting to the server
+    if (connect(socketFD, (struct sockaddr *)&serverAddress, sizeof(serverAddress)) < 0)
+    {
+        perror("Connection Failed");
+        close(socketFD);
+        return -1; 
+    }
+
+    // Sending action request ("Rename")
+ 
+    if (send(socketFD, "Rename", strlen("Rename"), 0)<0)
+    {
+        perror("Failed to send Rename request");
+        close(socketFD);
+        return -1; 
+    }
+    ret=recv(socketFD,responseMsg,MSG_SIZE,0);
+    if(ret<0){
+        perror("Failed to receive response of Rename request");
+        close(socketFD);
+        return -1; 
+    }
+    responseMsg[ret]='\0';
+    if(strcmp(responseMsg,"url")!=0){
+        printf("Something went wrong: %s\n",responseMsg);
+        close(socketFD);
+        return -1; 
+    }
+    char url[600];
+    snprintf(url,sizeof(url),"%s/%s/%s",userName->username,oldname,newName);
+    if (send(socketFD, url, sizeof(url), 0)<0)
+    {
+        perror("Failed to send Rename request");
+        close(socketFD);
+        return -1; 
+    }
+    ret=recv(socketFD,responseMsg,MSG_SIZE,0);
+    if(ret<0){
+        perror("Failed to receive response of Rename request");
+        close(socketFD);
+        return -1; 
+    }
+    responseMsg[ret]='\0';
+    if(strcmp(responseMsg,"done")==0){
+        return 1;
+    }
+    else{
+        printf("File doesn't exist\n");
+    }close(socketFD);
+    return -1;
 }

@@ -2,7 +2,8 @@
 int server_socket;
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-void handle(int n){
+void handle(int n)
+{
     close(server_socket);
     destroy_lock();
 }
@@ -83,9 +84,10 @@ void *handleClientRequests()
         }
 
         int result = recv(connection_fd, command, sizeof(command) - 1, 0);
-        if (result <= 0)
+        if (result < 0)
         {
             printf("Error in receiving data\n");
+            close(connection_fd);
             continue;
         }
         command[result] = '\0';
@@ -93,33 +95,41 @@ void *handleClientRequests()
         {
             if (executeCommand(connection_fd, command) == -1)
             {
-                printf("Error has occured closing fd\n");
+                close(connection_fd);
+                continue;
             }
         }
         else if (strcmp(command, "FilePresence") == 0)
-        {char file[FILENAME_MAX];
+        {
             result = send(connection_fd, "Filename", strlen("Filename"), 0);
             if (result < 0)
             {
                 perror("Error in sending ");
-                break;
+                close(connection_fd);
+                continue;
             }
-            result = recv(connection_fd, file, FILENAME_MAX, 0);
+            char url[300];
+            result = recv(connection_fd, url, sizeof(url), 0);
             if (result < 0)
             {
                 perror("Error in sending ");
-                break;
+                close(connection_fd);
+                continue;
             }
-            //file[result] = '\0';
-            printf("%s\n size:%d",file,result);
-            if (access(file,F_OK) != 0)
-            {   
+            printf("url %s", url);
+            char *user = strtok(url, "/");
+            char *filename = strtok(NULL, "");
+
+            printf("Value of search: %d", is_file_on_server(filename, user, 1));
+            if (is_file_on_server(filename, user, 1) == -1)
+            {
                 send(connection_fd, "No file", strlen("No file"), 0);
             }
             else
             {
                 send(connection_fd, "file", strlen("file"), 0);
             }
+         
         }
         else if (strcmp(command, "SignUp") == 0)
         {
@@ -128,15 +138,18 @@ void *handleClientRequests()
             if (result < 0)
             {
                 perror("Error in sending ");
-                break;
+                close(connection_fd);
+                continue;
             }
             result = recv(connection_fd, &user, sizeof(user), 0);
             if (result < 0)
             {
                 perror("Error in sending ");
-                break;
+                close(connection_fd);
+                continue;
             }
             populateLogin(&user, connection_fd);
+         
         }
         else if (strcmp(command, "Login") == 0)
         {
@@ -145,15 +158,18 @@ void *handleClientRequests()
             if (result < 0)
             {
                 perror("Error in sending ");
-                break;
+                close(connection_fd);
+                continue;
             }
             result = recv(connection_fd, &user, sizeof(user), 0);
             if (result < 0)
             {
                 perror("Error in sending ");
-                break;
+                close(connection_fd);
+                continue;
             }
             checkLogin(&user, connection_fd);
+
         }
         else if (strcmp(command, "ChangePerm") == 0)
         {
@@ -161,53 +177,115 @@ void *handleClientRequests()
             if (result < 0)
             {
                 perror("Error in sending ");
-                break;
+                close(connection_fd);
+                continue;
             }
             char fileUser[382];
             result = recv(connection_fd, fileUser, 381, 0);
             if (result < 0)
             {
                 perror("Error in sending ");
-                break;
+                close(connection_fd);
+                continue;
             }
             fileUser[382] = '\0';
             checkFileUser(fileUser, connection_fd);
+         
         }
-        else if(strcmp(command,"AvailableFile")==0){
-            if(send(connection_fd,"Ok",sizeof("Ok"),0)<0){
+        else if (strcmp(command, "AvailableFile") == 0)
+        {
+            if (send(connection_fd, "Ok", sizeof("Ok"), 0) < 0)
+            {
                 perror("Error: ");
                 close(connection_fd);
-                return NULL;
+                continue;
             }
             listfile(connection_fd);
+      
         }
-        else if(strcmp(command,"delete")==0){
+        else if (strcmp(command, "delete") == 0)
+        {
             char myUrl[150];
-            if(send(connection_fd,"url",strlen("url"),0)<0){
+            if (send(connection_fd, "url", strlen("url"), 0) < 0)
+            {
                 perror("Error: ");
                 close(connection_fd);
-                return NULL;
+                continue;
+              
             }
-            if(recv(connection_fd,myUrl,sizeof(myUrl),0)<0){
+            if (recv(connection_fd, myUrl, sizeof(myUrl), 0) < 0)
+            {
                 perror("Error: ");
                 close(connection_fd);
-                return NULL;
+                continue;              
+              
             }
-            int status=delet(myUrl);
-            if(status==1){
-                if(send(connection_fd,"done",strlen("done"),0)<0){
-                perror("Error: ");
-                close(connection_fd);
-                return NULL;
+            int status = delet(myUrl);
+            if (status == 1)
+            {
+                if (send(connection_fd, "done", strlen("done"), 0) < 0)
+                {
+                    perror("Error: ");
+                    close(connection_fd);
+                    return NULL;
+                }
             }
+            else
+            {
+                if (send(connection_fd, "fail", strlen("fail"), 0) < 0)
+                {
+                    perror("Error: ");
+                    close(connection_fd);
+                    return NULL;
+                }
             }
-            else{
-                if(send(connection_fd,"fail",strlen("fail"),0)<0){
-                perror("Error: ");
-                close(connection_fd);
-                return NULL;
-            }
+    
         }
+
+        else if (strcmp(command, "Rename") == 0)
+        {
+            if (send(connection_fd, "url", strlen("url"), 0) < 0)
+            {
+                perror("Error: ");
+                close(connection_fd);
+                continue;
+                
+            }
+            char url[600];
+           
+
+            if (recv(connection_fd, url, sizeof(url), 0) < 0)
+            {
+                perror("Error");
+                close(connection_fd);
+                continue;
+            }
+            
+            char *user = strtok(url, "/");
+            char *oldname = strtok(NULL, "/");
+            char *newname = strtok(NULL, "/");
+            printf("%s,%s,%s\n",user,oldname,newname);
+            if (user == NULL || oldname == NULL || newname == NULL)
+            {
+                printf("Error in url\n");
+                close(connection_fd);
+                continue;
+                
+            }
+            int status = changeFileName(user, oldname, newname);
+            if (status != -1)
+            {
+                send(connection_fd, "done", strlen("done"), 0);
+            }
+            else
+            {
+                send(connection_fd, "Absent", strlen("Absent"), 0);
+            }
+            
+        }
+        else
+        {
+            printf("Wrong command\n");
         }
         close(connection_fd);
         printf("Client handled by thread: %ld\n", (long)pthread_self());
@@ -272,7 +350,7 @@ int main(int argc, char *argv[])
         printf("Error setting up listen\n");
         return -1;
     }
-    signal(SIGINT,handle);
+    signal(SIGINT, handle);
     printf("Multi-threaded server is waiting for client connections...\n");
 
     while (1)

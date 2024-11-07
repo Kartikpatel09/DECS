@@ -34,7 +34,8 @@ int main(int argc, char *argv[])
         printf("Enter 5 for knowing available files: \n");
         printf("Enter 6 if you wanted to send saved file to server: \n");
         printf("Enter 7 for deleting file\n");
-        printf("Enter 8 for exiting\n");
+        printf("Enter 8 for renaming the file\n");
+        printf("Enter 9 for exiting\n");
         printf("Enter your choice: ");
         scanf("%d", &inputChoice);
         char fileName[FILENAME_MAX_LENGTH];
@@ -46,7 +47,7 @@ int main(int argc, char *argv[])
 
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
-            if (checkFilePresence(fileName, serverIP, serverPort) == 1)
+            if (checkFilePresence(fileName, serverIP, serverPort,user) == 1)
             {
                 printf("File Already Present enter other name\n");
                 break;
@@ -62,7 +63,7 @@ int main(int argc, char *argv[])
             }
 
             // Send the file to the server
-            if (sendFileData(fileName, serverIP, serverPort, user, temporary_file) == -1)
+            if (sendFileData(fileName, serverIP, serverPort, user, temporary_file,"create") == -1)
             {
                 return -1;
             }
@@ -77,7 +78,7 @@ int main(int argc, char *argv[])
 
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
-            if (checkFilePresence(fileName, serverIP, serverPort) == 0)
+            if (checkFilePresence(fileName, serverIP, serverPort,user) == 0)
             {
                 printf("File is not present\n");
                 break;
@@ -104,7 +105,7 @@ int main(int argc, char *argv[])
             }
 
             // Send the updated file back to the server
-            if (sendFileData(fileName, serverIP, serverPort, user, temporary_file) == -1)
+            if (sendFileData(fileName, serverIP, serverPort, user, temporary_file,"store") == -1)
             {
                 return -1;
             }
@@ -114,7 +115,7 @@ int main(int argc, char *argv[])
             char choice;
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
-            if (checkFilePresence(fileName, serverIP, serverPort) == 0)
+            if (checkFilePresence(fileName, serverIP, serverPort,user) == 0)
             {
                 printf("File is not present\n");
                 break;
@@ -220,13 +221,13 @@ int main(int argc, char *argv[])
         case 6:
             printf("Enter the path of file: ");
             scanf("%s", fileName);
-            if (checkFilePresence(fileName, serverIP, serverPort) == 1)
+            if (checkFilePresence(fileName, serverIP, serverPort,user) == 1)
             {
                 printf("File Already Present enter other name\n");
                 break;
             }
             // Send the file to the server
-            if (sendFileData(fileName, serverIP, serverPort, user, fileName) == -1)
+            if (sendFileData(fileName, serverIP, serverPort, user, fileName,"create") == -1)
             {
                 return -1;
             }
@@ -235,7 +236,7 @@ int main(int argc, char *argv[])
         case 7:
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
-            if (checkFilePresence(fileName, serverIP, serverPort) == 0)
+            if (checkFilePresence(fileName, serverIP, serverPort,user) == 0)
             {
                 printf("File is not present\n");
                 break;
@@ -248,6 +249,15 @@ int main(int argc, char *argv[])
             }
             break;
         case 8:
+            char oldname[FILENAME_MAX_LENGTH];
+            char newname[FILENAME_MAX_LENGTH];
+            printf("Enter old name of file: ");
+            scanf("%s",oldname);
+            printf("Enter new name of file: ");
+            scanf("%s",newname);
+            changeFileName(user,oldname,newname,serverIP,serverPort);
+            break;
+        case 9:
             return 0;
 
         default:
