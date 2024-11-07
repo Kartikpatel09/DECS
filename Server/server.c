@@ -1,8 +1,11 @@
 #include "serverHeader.h"
-
+int server_socket;
 pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 pthread_cond_t cond = PTHREAD_COND_INITIALIZER;
-
+void handle(int n){
+    close(server_socket);
+    destroy_lock();
+}
 typedef struct Node
 {
     int connection_fd;
@@ -94,22 +97,23 @@ void *handleClientRequests()
             }
         }
         else if (strcmp(command, "FilePresence") == 0)
-        {
+        {char file[FILENAME_MAX];
             result = send(connection_fd, "Filename", strlen("Filename"), 0);
             if (result < 0)
             {
                 perror("Error in sending ");
                 break;
             }
-            result = recv(connection_fd, command, MSG_SIZE, 0);
+            result = recv(connection_fd, file, FILENAME_MAX, 0);
             if (result < 0)
             {
                 perror("Error in sending ");
                 break;
             }
-            command[result] = '\0';
-            if (access(command, F_OK) != 0)
-            {
+            //file[result] = '\0';
+            printf("%s\n size:%d",file,result);
+            if (access(file,F_OK) != 0)
+            {   
                 send(connection_fd, "No file", strlen("No file"), 0);
             }
             else
@@ -177,7 +181,34 @@ void *handleClientRequests()
             }
             listfile(connection_fd);
         }
-        
+        else if(strcmp(command,"delete")==0){
+            char myUrl[150];
+            if(send(connection_fd,"url",strlen("url"),0)<0){
+                perror("Error: ");
+                close(connection_fd);
+                return NULL;
+            }
+            if(recv(connection_fd,myUrl,sizeof(myUrl),0)<0){
+                perror("Error: ");
+                close(connection_fd);
+                return NULL;
+            }
+            int status=delet(myUrl);
+            if(status==1){
+                if(send(connection_fd,"done",strlen("done"),0)<0){
+                perror("Error: ");
+                close(connection_fd);
+                return NULL;
+            }
+            }
+            else{
+                if(send(connection_fd,"fail",strlen("fail"),0)<0){
+                perror("Error: ");
+                close(connection_fd);
+                return NULL;
+            }
+        }
+        }
         close(connection_fd);
         printf("Client handled by thread: %ld\n", (long)pthread_self());
         printf("-----------------------------------------------------------\n");
@@ -186,16 +217,16 @@ void *handleClientRequests()
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc != 2)
     {
-        printf("Usage: %s <port> <num_threads>\n", argv[0]);
+        printf("Usage: %s <port> \n", argv[0]);
         return -1;
     }
 
     int port = atoi(argv[1]);
-    int threadCount = atoi(argv[2]);
+    int threadCount = MAX_THREADS;
     pthread_t threads[threadCount];
-    int server_socket, err;
+    int err;
     struct sockaddr_in server_addr;
     char *ip = "127.0.0.1";
 
@@ -207,7 +238,7 @@ int main(int argc, char *argv[])
             return -1;
         }
     }
-
+    initialize_lock();
     if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     {
         printf("Socket creation error\n");
@@ -241,7 +272,7 @@ int main(int argc, char *argv[])
         printf("Error setting up listen\n");
         return -1;
     }
-
+    signal(SIGINT,handle);
     printf("Multi-threaded server is waiting for client connections...\n");
 
     while (1)
@@ -252,7 +283,7 @@ int main(int argc, char *argv[])
         if (connection_fd < 0)
         {
             printf("Connection not established\n");
-            continue;
+            return -1;
         }
 
         pthread_mutex_lock(&lock);
