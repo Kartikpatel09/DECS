@@ -1,0 +1,1 @@
+struct user *loginPage(int, const char *);
