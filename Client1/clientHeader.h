@@ -80,7 +80,7 @@ int Insert(char *filename, char *timestemp,int flag) {
     if(flag!=-1){
         possition=flag*149;
     }
-    printf("\n%d\n",possition);
+    
     if (lseek(fileDescriptor, possition, SEEK_SET) == -1) {
         perror("Error seeking in file");
         close(fileDescriptor);
@@ -473,18 +473,17 @@ int receiveFileData(const char *fileName, const char *serverIP, int serverPort, 
 }
 
 // Function to send data to the server
-int sendFileData(const char *fileName, const char *serverIP, int serverPort, struct user *user,char *temporary_file,char* choice)
+int sendFileData(const char *fileName, const char *serverIP, int serverPort, struct user *user, char *temporary_file, char *choice)
 {
-    int fileDescriptor = open(temporary_file,O_CREAT | O_RDONLY);
+    int fileDescriptor = open(temporary_file, O_RDONLY);
     if (fileDescriptor < 0)
     {
         perror("Error opening file for reading");
-        return -1; 
+        return -1;
     }
 
     int socketFD, ret;
     struct sockaddr_in serverAddress;
-    char buffer[BUFFER_SIZE] = {0};
     char responseMsg[MSG_SIZE];
 
     // Creating a socket
@@ -492,7 +491,7 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
     {
         perror("Socket creation error");
         close(fileDescriptor);
-        return -1; 
+        return -1;
     }
 
     serverAddress.sin_family = AF_INET;
@@ -503,7 +502,7 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
         perror("Invalid address/ Address not supported");
         close(fileDescriptor);
         close(socketFD);
-        return -1; 
+        return -1;
     }
 
     // Connecting to the server
@@ -512,7 +511,7 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
         perror("Connection Failed");
         close(fileDescriptor);
         close(socketFD);
-        return -1; 
+        return -1;
     }
 
     // Sending action request ("Create/Store")
@@ -522,7 +521,7 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
         perror("Failed to send Create/Store request");
         close(fileDescriptor);
         close(socketFD);
-        return -1; 
+        return -1;
     }
 
     ret = recv(socketFD, responseMsg, sizeof(responseMsg) - 1, 0);
@@ -546,29 +545,33 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
         perror("Failed to send file name");
         close(fileDescriptor);
         close(socketFD);
-        return -1; 
+        return -1;
     }
+
     ret = recv(socketFD, responseMsg, sizeof(responseMsg), 0);
     if (ret == -1)
     {
         perror("Failed to receive message");
         close(fileDescriptor);
         close(socketFD);
-        return -1; 
+        return -1;
     }
-    responseMsg[ret]='\0';
-    if(strcmp(responseMsg,"Choice")!=0){
-        printf("something went wrong");
+    responseMsg[ret] = '\0';
+    if (strcmp(responseMsg, "Choice") != 0)
+    {
+        printf("Something went wrong");
         close(fileDescriptor);
         close(socketFD);
         return -1;
     }
-    if(send(socketFD,choice,sizeof(choice),0)<0){
+    if (send(socketFD, choice, strlen(choice), 0) < 0)
+    {
         perror("Failed to send message");
         close(fileDescriptor);
         close(socketFD);
-        return -1; 
+        return -1;
     }
+
     // Receiving server response ("Ok")
     ret = recv(socketFD, responseMsg, sizeof(responseMsg), 0);
     if (ret == -1)
@@ -576,44 +579,52 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
         perror("Failed to receive message");
         close(fileDescriptor);
         close(socketFD);
-        return -1; 
+        return -1;
     }
-    responseMsg[ret]='\0';
-    
+    responseMsg[ret] = '\0';
+
     if (strcmp(responseMsg, "AD") == 0)
     {
-        printf("Acess Denied :You don't have permision to write\n");
-        close(fileDescriptor);
-        close(socketFD);
-        return -1; 
-    }
-    else if(strcmp(responseMsg,"Ok")!=0){
-        printf("Cannot Save file in server\n");
-        close(fileDescriptor);
-        close(socketFD);
-        return -1; 
-    }
-    else if(strcmp(responseMsg,"File exist")==0){
-        printf("File already exist use different name\n");
+        printf("Access Denied: You don't have permission to write\n");
         close(fileDescriptor);
         close(socketFD);
         return -1;
     }
-    // Sending file data to the server
-    int bytesRead;
-    while ((bytesRead = read(fileDescriptor, buffer, BUFFER_SIZE)) > 0)
+    else if (strcmp(responseMsg, "Ok") != 0)
     {
-        ret = send(socketFD, buffer, bytesRead, 0);
-        if (ret == -1)
+        printf("Cannot save file on server\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1;
+    }
+    else if (strcmp(responseMsg, "File exist") == 0)
+    {
+        printf("File already exists. Use a different name.\n");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1;
+    }
+
+    // Sending file data to the server using sendfile
+    struct stat fileStat;
+    if (fstat(fileDescriptor, &fileStat) < 0)
+    {
+        perror("Error getting file stats");
+        close(fileDescriptor);
+        close(socketFD);
+        return -1;
+    }
+
+    off_t offset = 0;
+    while (offset < fileStat.st_size)
+    {
+        int bytesSent = sendfile(socketFD, fileDescriptor, &offset, fileStat.st_size - offset);
+        if (bytesSent < 0)
         {
-            perror("Failed to send file");
+            perror("Failed to send file using sendfile");
             close(fileDescriptor);
             close(socketFD);
-            return -1; 
-        }
-        if (bytesRead < BUFFER_SIZE)
-        {
-            break;
+            return -1;
         }
     }
 
@@ -624,15 +635,14 @@ int sendFileData(const char *fileName, const char *serverIP, int serverPort, str
         perror("Failed to receive message");
         close(fileDescriptor);
         close(socketFD);
-        return -1; 
+        return -1;
     }
     serverResponse[ret] = '\0';
-    printf("Server response: %s\n", serverResponse);
+    
     close(fileDescriptor);
     close(socketFD);
     return 1; // Success
 }
-
 int executeCommand(char *command)
 {
     int returnValue = system(command);

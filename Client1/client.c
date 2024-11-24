@@ -1,6 +1,9 @@
 #include "clientHeader.h"
 #include "loginHeader.h"
-
+void handler(int sig){
+    executeCommand("rm -r _cache_");
+    exit(0);
+}
 int main(int argc, char *argv[])
 {   
     if (argc != 3)
@@ -8,23 +11,26 @@ int main(int argc, char *argv[])
         printf("Usage: %s <server_ip> <server_port>\n", argv[0]);
         return -1;
     }
+    clock_t t1, t2;
+    signal(SIGINT,handler); // Register the signal handler for clean exit
     char *dir = "_cache_/";
     int inputChoice;
     const char *serverIP = argv[1];
     int serverPort = atoi(argv[2]);
     struct user *user = loginPage(serverPort, serverIP);
     int rec;
-    executeCommand("rm _cache_/*");
+    executeCommand("mkdir _cache_");
     executeCommand("touch _cache_/access.dat");
 
     while (1)
-    {
+    {   t1 = clock();
         char temporary_file[FILENAME_MAX_LENGTH];
         char nano[COMMAND_SIZE];
         char cat[COMMAND_SIZE];
         int cachingFalg = 0;
         strcpy(temporary_file, dir);
 
+        // Display menu options to the user
         printf("\n\n-----------------------Options Available------------------------\n");
         printf("\tHello user : %s\n",user->username);
         printf("Enter the task that you want to perform:\n");
@@ -48,6 +54,7 @@ int main(int argc, char *argv[])
 
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
+            //Check Wheather file is available or not
             if (checkFilePresence(fileName, serverIP, serverPort,user) == 1)
             {
                 printf("File Already Present enter other name\n");
@@ -68,10 +75,6 @@ int main(int argc, char *argv[])
             {
                 return -1;
             }
-            if (!rem(temporary_file, 0))
-            {
-                printf("Error in deleting file\n");
-            }
 
             break;
 
@@ -86,6 +89,7 @@ int main(int argc, char *argv[])
             }
             strcat(temporary_file, fileName);
             snprintf(nano, sizeof(nano), "nano %s", temporary_file);
+            //Cheking wheather file is available in cache or not
             cachingFalg = isCached(fileName, serverIP, serverPort, user);
             if(cachingFalg){printf("Using cached data\n");}
             if (!cachingFalg)
@@ -116,6 +120,7 @@ int main(int argc, char *argv[])
             char choice;
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
+            //Checking wheather the file we are looking for is available in server or not
             if (checkFilePresence(fileName, serverIP, serverPort,user) == 0)
             {
                 printf("File is not present\n");
@@ -125,6 +130,7 @@ int main(int argc, char *argv[])
             snprintf(nano, sizeof(nano), "nano %s", temporary_file);
             printf("Do you want to store it's copy?(Y/N): ");
             scanf(" %c", &choice);
+            //Searching file inn cache file
             cachingFalg = isCached(fileName, serverIP, serverPort, user);
             if (cachingFalg)
             {
@@ -135,9 +141,10 @@ int main(int argc, char *argv[])
                 if (cachingFalg)
                 {
                     int firstfd = open(temporary_file, O_RDWR);
-                    int secondfd = open(fileName, O_RDWR);
+                    int secondfd = open(fileName, O_RDWR | O_CREAT);
                     int readByte;
                     char buff[1024];
+                    //Store file in user personal directory
                     while ((readByte = read(firstfd, buff, 1024)) > 0)
                     {
                         write(secondfd, buff, readByte);
@@ -161,7 +168,7 @@ int main(int argc, char *argv[])
 
             printf("-----------------File content starts File name: %s-----------------\n\n", fileName);
             if (!cachingFalg)
-            {
+            {   //if file is not cached than fetching it from server
                 if ((rec = receiveFileData(fileName, serverIP, serverPort, user, temporary_file)) == -1)
                 {
                     return -1;
@@ -173,6 +180,7 @@ int main(int argc, char *argv[])
                 }
             }
             snprintf(cat, sizeof(cat), "cat %s", temporary_file);
+            //display content of file
             if (!executeCommand(cat))
             {
                 printf("Error opening the file\n");
@@ -182,6 +190,7 @@ int main(int argc, char *argv[])
 
             break;
         case 4:
+            //Code for changing permmission of file
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
             printf("\n");
@@ -207,6 +216,7 @@ int main(int argc, char *argv[])
             strcat(updatedName, "/");
             strcat(updatedName, userName);
             printf("%s\n", updatedName);
+            //Preparing query in certain formate for changing permision
             if ((changePermission(updatedName, serverIP, serverPort, user) == -1))
             {
                 return -1;
@@ -235,6 +245,7 @@ int main(int argc, char *argv[])
 
             break;
         case 7:
+            //Cheack wheather file is available or not if yes than delete it otherwise not
             printf("Enter the name of the file: ");
             scanf("%s", fileName);
             if (checkFilePresence(fileName, serverIP, serverPort,user) == 0)
@@ -256,9 +267,17 @@ int main(int argc, char *argv[])
             scanf("%s",oldname);
             printf("Enter new name of file: ");
             scanf("%s",newname);
+            //Checking wheather file with newname is present or not
+            if (checkFilePresence(newname, serverIP, serverPort,user) == 1)
+            {
+                printf("File Already Present enter other name\n");
+                break;
+            }
             changeFileName(user,oldname,newname,serverIP,serverPort);
             break;
         case 9:
+            //Exit fromm client after deleting cache file
+            executeCommand("rm -r _cache_");
             return 0;
 
         default:
@@ -266,6 +285,11 @@ int main(int argc, char *argv[])
 
             break;
         }
+        t2 = clock();
+        double elapsed_time = ((double)(t2 - t1) / CLOCKS_PER_SEC);
+        //Measuring time for operation
+        printf("\nElapsed time for performing operation: %.5f s\n", elapsed_time);
+
         clearCache();
     }
 

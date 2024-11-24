@@ -88,6 +88,8 @@ File_Lock *getLock(const char *filename)
     return NULL;
 }
 //--------------------------------------------------------LOCK CODE END------------------------------------------------
+
+//Shell command from c
 int BashexecuteCommand(char *command)
 {
     int returnValue = system(command);
@@ -100,6 +102,7 @@ int BashexecuteCommand(char *command)
 
     return SUCCESS; // Success
 }
+//Function is used for multiple purpose like to create entry in access.dat file and to see wheather a user has read access and write access or not
 int populateAccess(char *filename, char *user, char *command, char *timestemp)
 {
     int Flag = 1;
@@ -299,18 +302,29 @@ int sendFileData(const char *filename, int connection_fd)
     }
 
     char buffer[BUFFER_SIZE];
-    int bytesRead, bytesSent;
+    int bytesRead;
 
     pthread_mutex_lock(&(my_file_lock->lock));
     my_file_lock->reader_count += 1;
     pthread_mutex_unlock(&(my_file_lock->lock));
 
-    while ((bytesRead = read(file_fd, buffer, BUFFER_SIZE)) > 0)
+     struct stat file_stat;
+    if (fstat(file_fd, &file_stat) < 0)
     {
-        bytesSent = send(connection_fd, buffer, bytesRead, 0);
-        if (bytesSent < 0)
+        perror("Error getting file stats");
+        close(file_fd);
+        return ERROR;
+    }
+
+    // Use sendfile to send the file
+    off_t offset = 0;
+    ssize_t bytesSent;
+    while (offset < file_stat.st_size)
+    {
+        bytesSent = sendfile(connection_fd, file_fd, &offset, file_stat.st_size - offset);
+        if (bytesSent <= 0)
         {
-            perror("Error in sending data");
+            perror("Error in sendfile");
             close(file_fd);
             return ERROR;
         }
@@ -384,6 +398,7 @@ int receiveFileData(const char *filename, int connection_fd)
 
     return SUCCESS;
 }
+//Every thread calls this function after receiving a command from client
 int executeCommand(int connection_fd, char *command)
 {
     int result = send(connection_fd, "Ok", strlen("Ok"), 0);
@@ -393,6 +408,7 @@ int executeCommand(int connection_fd, char *command)
         return ERROR;
     }
     char url[MAX_URL_LENGTH];
+    //If else ladder of different types of request that a person can ask for
     if (strcmp("Fetch", command) == 0)
     {
         result = recv(connection_fd, url, sizeof(url), 0);
@@ -557,7 +573,7 @@ int executeCommand(int connection_fd, char *command)
     }
     return 1;
 }
-
+//A file to search for username and to save new username and passwards which will be used in future for login 
 void populateLogin(struct user *user, int connection_fd)
 {
     int file_fd = open("_metadata_/login.dat", O_RDWR | O_APPEND | O_CREAT);
@@ -601,7 +617,7 @@ void populateLogin(struct user *user, int connection_fd)
     printf("File request satisfied\n");
     close(file_fd);
 }
-
+//Function for checking wheather a user has already signuped or not
 void checkLogin(struct user *user, int connection_fd)
 {
     int file_fd = open("_metadata_/login.dat", O_RDONLY);
@@ -638,7 +654,7 @@ void checkLogin(struct user *user, int connection_fd)
     printf("File request satisfied\n");
     close(file_fd);
 }
-
+//Used to know about user of file that is file among which users is shared
 void checkFileUser(char *fileUser, int connection_fd)
 {
     int file_fd = open("_metadata_/access.dat", O_RDWR);
@@ -833,6 +849,7 @@ void checkFileUser(char *fileUser, int connection_fd)
     printf("File request satisfied\n");
     close(file_fd);
 }
+//Function to send various files availabee to a user
 void listfile(int connection_fd)
 {
     char url[150];
@@ -923,7 +940,7 @@ void listfile(int connection_fd)
         return;
     }
 }
-
+//Searching wheather file is available or not for certain user
 int is_file_on_server(char *filename, char *userName, int flag)
 {
     int pos = -1;
@@ -978,7 +995,7 @@ int is_file_on_server(char *filename, char *userName, int flag)
     close(file_fd);
     return -1; // Return -1 if no matching record is found
 }
-
+//Function to delete file from server
 int delet(char *URL)
 {
     //-1 file doesn't exist or error
@@ -1020,7 +1037,7 @@ int delet(char *URL)
     close(file_descriptor);
     return 1;
 }
-
+//Function to change name of file
 int changeFileName(char *userName, char *oldfileName, char *newfileName)
 {
     int index = is_file_on_server(oldfileName, userName, 0);
@@ -1069,6 +1086,7 @@ int changeFileName(char *userName, char *oldfileName, char *newfileName)
 
     return 1;
 }
+//Function to know about the creater of file important for renaming and deleting files
 int findCreater(char *filename, char *creater)
 {
 
